@@ -1,0 +1,32 @@
+name: Coverage
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  codecov:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install grcov
+        run: cargo install grcov
+      - name: Setup coverage env
+        run: |
+          echo "RUSTFLAGS=-Zinstrument-coverage" >> $GITHUB_ENV
+          echo "LLVM_PROFILE_FILE=coverage-%p-%m.profraw" >> $GITHUB_ENV
+      - name: Build tests
+        run: cargo build --workspace
+      - name: Run tests
+        run: cargo test --workspace
+      - name: Generate coverage report
+        run: |
+          mkdir -p target/coverage
+          grcov . -s . --binary-path ./target/debug/ -t lcov --branch --ignore-not-existing -o target/coverage/lcov.info
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: target/coverage/lcov.info
+          fail_ci_if_error: true

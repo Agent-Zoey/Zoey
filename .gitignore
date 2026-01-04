@@ -1,0 +1,63 @@
+# Rust
+/target/
+**/*.rs.bk
+*.pdb
+Cargo.lock
+
+
+# IDE
+.idea/
+.vscode/
+.trae/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Environment
+.env
+.env.*
+.env.local
+.env.*.local
+*.env
+.venv-voice
+# Database
+*.db
+*.sqlite
+*.sqlite3
+.venv
+.venv/*
+
+# Local data directories (keep structure with .gitkeep)
+.zoey/**
+!.zoey/**/
+!.zoey/**/.gitkeep
+
+training_data/**
+!training_data/**/
+!training_data/**/.gitkeep
+
+
+# Logs
+*.log
+logs/
+
+# Testing
+coverage/
+
+# Build artifacts
+dist/
+build/
+
+# Node.js
+node_modules/
+
+# Vercel
+.vercel/
+
+
+# Data files
+/data/
+
+#archive
+archive/

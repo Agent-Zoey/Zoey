@@ -1,0 +1,92 @@
+# GitLeaks configuration for LauraAI
+# See: https://github.com/gitleaks/gitleaks
+
+title = "LauraAI Secret Detection Rules"
+
+[allowlist]
+description = "Allowlist for false positives"
+paths = [
+    '''\.env\.example$''',
+    '''docs/.*\.md$''',
+    '''target/''',
+    '''\.git/''',
+]
+
+# Custom rules for AI-specific secrets
+[[rules]]
+id = "openai-api-key"
+description = "OpenAI API Key"
+regex = '''sk-[a-zA-Z0-9]{20,}'''
+tags = ["api", "openai"]
+
+[[rules]]
+id = "anthropic-api-key"
+description = "Anthropic API Key"
+regex = '''sk-ant-[a-zA-Z0-9-]{20,}'''
+tags = ["api", "anthropic"]
+
+[[rules]]
+id = "huggingface-token"
+description = "HuggingFace Token"
+regex = '''hf_[a-zA-Z0-9]{20,}'''
+tags = ["api", "huggingface"]
+
+[[rules]]
+id = "generic-api-key"
+description = "Generic API Key"
+regex = '''(?i)api[_-]?key['":\s]*[=:]\s*['"]?[a-zA-Z0-9_-]{20,}['"]?'''
+tags = ["api", "generic"]
+
+[[rules]]
+id = "generic-secret"
+description = "Generic Secret"
+regex = '''(?i)secret['":\s]*[=:]\s*['"]?[a-zA-Z0-9_-]{20,}['"]?'''
+tags = ["secret", "generic"]
+
+[[rules]]
+id = "private-key"
+description = "Private Key"
+regex = '''-----BEGIN (RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----'''
+tags = ["key", "private"]
+
+[[rules]]
+id = "aws-access-key"
+description = "AWS Access Key ID"
+regex = '''AKIA[A-Z0-9]{16}'''
+tags = ["aws", "access-key"]
+
+[[rules]]
+id = "aws-secret-key"
+description = "AWS Secret Access Key"
+regex = '''(?i)aws_secret_access_key['":\s]*[=:]\s*['"]?[A-Za-z0-9/+=]{40}['"]?'''
+tags = ["aws", "secret"]
+
+[[rules]]
+id = "database-url"
+description = "Database Connection URL with Password"
+regex = '''(?i)(postgres|mysql|mongodb|redis)://[^:]+:[^@]+@'''
+tags = ["database", "connection"]
+
+[[rules]]
+id = "jwt-token"
+description = "JSON Web Token"
+regex = '''eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+'''
+tags = ["jwt", "token"]
+
+# Entropy-based detection
+[rules.entropy]
+enabled = true
+min_entropy = 4.5
+max_entropy = 8.0
+
+# Additional allowlists for specific patterns
+[[rules.allowlist]]
+regexes = [
+    '''example\.com''',
+    '''localhost''',
+    '''127\.0\.0\.1''',
+    '''placeholder''',
+    '''your-.*-here''',
+    '''<.*>''',
+    '''\$\{.*\}''',
+]

@@ -1,0 +1,64 @@
+[package]
+name = "zoey-plugin-x402-video"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "X402 payment-gated video generation and social media posting plugin for ZoeyOS"
+
+[dependencies]
+zoey-core = { path = "../../core/zoey-core" }
+
+# Async
+tokio = { workspace = true }
+async-trait = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# HTTP
+reqwest = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+# UUID
+uuid = { workspace = true }
+
+# Utilities
+chrono = { workspace = true }
+base64 = { workspace = true }
+
+# URL handling
+url = "2.5"
+
+# Pattern matching
+regex = { workspace = true }
+
+# HTTP routing (for REST API endpoints)
+axum = { workspace = true }
+
+[dev-dependencies]
+mockall = { workspace = true }
+tokio-test = "0.4"
+futures = "0.3"
+tower = { version = "0.4", features = ["util"] }
+
+[[test]]
+name = "e2e_x402"
+path = "tests/e2e_x402.rs"
+
+[[test]]
+name = "e2e_video"
+path = "tests/e2e_video.rs"
+
+[[test]]
+name = "e2e_api"
+path = "tests/e2e_api.rs"
+

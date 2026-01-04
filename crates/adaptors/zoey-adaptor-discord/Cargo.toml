@@ -1,0 +1,45 @@
+[package]
+name = "zoey-adaptor-discord"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Discord adapter using serenity websocket to connect Zoey agents to Discord"
+
+[dependencies]
+zoey-core = { path = "../../core/zoey-core" }
+zoey-provider-voice = { path = "../../providers/zoey-provider-voice", optional = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+async-trait = { workspace = true }
+serenity = { version = "0.12", features = ["voice", "cache"] }
+reqwest = { version = "0.11", features = ["json"] }
+songbird = { version = "0.4", optional = true, features = ["builtin-queue", "receive"] }
+symphonia = { version = "0.5", features = ["mp3"], optional = true }
+bytes = { workspace = true }
+parking_lot = { version = "0.12", optional = true }
+once_cell = { version = "1.19", optional = true }
+vosk = { version = "0.3", optional = true }
+
+[features]
+default = []
+# Basic voice (TTS only)
+voice = ["songbird", "zoey-provider-voice", "symphonia"]
+# Voice with Whisper STT (listen to users)
+voice-whisper = ["voice", "zoey-provider-voice/whisper", "parking_lot"]
+# Voice with Vosk STT (fast local, ~100-200ms latency)
+voice-vosk = ["voice", "zoey-provider-voice/vosk-stt", "parking_lot", "once_cell", "vosk"]
+# Voice with Unmute STT/TTS (premium GPU)
+voice-unmute = ["voice", "zoey-provider-voice/unmute", "parking_lot"]
+# Voice with Moshi STT/TTS (real-time full-duplex, Kyutai Moshi model)
+voice-moshi = ["voice", "zoey-provider-voice/moshi", "parking_lot"]
+# Full voice capabilities
+voice-full = ["voice-whisper", "voice-vosk", "voice-unmute", "voice-moshi"]
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

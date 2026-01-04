@@ -1,0 +1,99 @@
+[package]
+name = "zoey-provider-voice"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Voice provider for ZoeyOS with TTS (OpenAI, ElevenLabs, Piper, Supertonic) and STT (Whisper, Unmute) support"
+
+[dependencies]
+zoey-core = { path = "../../core/zoey-core" }
+
+# Async
+tokio = { workspace = true, features = ["sync", "io-util", "rt-multi-thread", "process"] }
+async-trait = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, optional = true }
+
+# Error handling
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+# HTTP client for TTS/STT APIs
+reqwest = { workspace = true, features = ["json", "stream"] }
+futures-util = { workspace = true }
+
+# Audio processing
+bytes = { workspace = true }
+base64 = { workspace = true }
+
+# HTTP server (for piper-server)
+axum = { workspace = true, optional = true }
+tower = { workspace = true, optional = true }
+tower-http = { workspace = true, optional = true }
+
+# Whisper STT (optional)
+whisper-rs = { version = "0.12", optional = true }
+hound = { version = "3.5", optional = true }  # WAV file processing
+dirs = { version = "5.0", optional = true }   # Cache directory
+
+# Vosk STT (optional - fast local recognition)
+vosk = { version = "0.3", optional = true }
+
+# Unmute STT/TTS (optional)
+tokio-tungstenite = { version = "0.21", optional = true, features = ["native-tls"] }
+url = { version = "2.5", optional = true }
+uuid = { version = "1.4", features = ["v4"], optional = true }
+
+# Moshi STT (optional - real-time speech-text via Moshi)
+native-tls = { version = "0.2", optional = true }
+opus = { version = "0.3", optional = true }
+serde_urlencoded = { version = "0.7", optional = true }
+
+# CLI (for piper-server binary)
+clap = { version = "4.4", features = ["derive", "env"], optional = true }
+
+[dev-dependencies]
+tokio-test = "0.4"
+
+[features]
+default = []
+# Whisper.cpp STT via whisper-rs (CPU/GPU, auto-downloads models)
+whisper = ["whisper-rs", "hound", "dirs"]
+# Vosk STT (fast local recognition, ~100-200ms latency)
+vosk-stt = ["vosk", "hound", "dirs"]
+# Unmute STT/TTS (GPU-accelerated, requires external service)
+unmute = ["tokio-tungstenite", "url", "uuid"]
+# Moshi STT (real-time speech-text foundation model, full-duplex dialogue)
+# Based on Kyutai's Moshi: https://github.com/kyutai-labs/moshi
+moshi = ["tokio-tungstenite", "url", "native-tls", "opus", "serde_urlencoded", "uuid"]
+# Supertonic TTS (ultra-fast on-device TTS via HTTP or ONNX)
+# Note: HTTP mode works out of the box, ONNX mode requires 'ort' crate
+supertonic = []
+# Piper TTS server (local, low-latency)
+piper-server = ["axum", "tower", "tower-http", "clap", "tracing-subscriber", "dirs"]
+# Full voice server (Whisper/Vosk STT + Piper TTS in one WebSocket server)
+voice-server = ["whisper", "vosk-stt", "axum", "tower", "tower-http", "clap", "tracing-subscriber", "dirs", "uuid", "tokio-tungstenite"]
+# Enable all STT engines
+full = ["whisper", "vosk-stt", "unmute", "moshi"]
+
+[lib]
+name = "zoey_provider_voice"
+path = "src/lib.rs"
+
+[[bin]]
+name = "piper-server"
+path = "src/bin/piper_server.rs"
+required-features = ["piper-server"]
+
+[[bin]]
+name = "voice-server"
+path = "src/bin/voice_server.rs"
+required-features = ["voice-server"]

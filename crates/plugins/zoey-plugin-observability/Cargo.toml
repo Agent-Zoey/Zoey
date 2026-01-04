@@ -1,0 +1,28 @@
+[package]
+name = "zoey-plugin-observability"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Observability plugin for ZoeyAI - reasoning chains, confidence, audit logs"
+
+[dependencies]
+# Workspace dependencies
+zoey-core = { path = "../../core/zoey-core" }
+tokio = { workspace = true }
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+tracing = { workspace = true }
+
+# For tamper-evident logging
+sha2 = { workspace = true }
+base64 = { workspace = true }
+
+[dev-dependencies]
+mockall = { workspace = true }

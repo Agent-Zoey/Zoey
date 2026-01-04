@@ -1,0 +1,120 @@
+[workspace]
+members = [
+    # Core
+    "crates/core/zoey-core",
+    
+    # Providers (all consumer)
+    "crates/providers/zoey-provider-anthropic",
+    "crates/providers/zoey-provider-openai",
+    "crates/providers/zoey-provider-local",
+    "crates/providers/zoey-provider-voice",
+    "crates/providers/zoey-provider-router",
+    
+    # Storage (all consumer)
+    "crates/storage/zoey-storage-sql",
+    "crates/storage/zoey-storage-vector",
+    
+    # Plugins
+    "crates/plugins/zoey-plugin-bootstrap",
+    "crates/plugins/zoey-plugin-memory",
+    "crates/plugins/zoey-plugin-knowledge",
+    "crates/plugins/zoey-plugin-hardware",
+    "crates/plugins/zoey-plugin-observability",
+    "crates/plugins/zoey-plugin-moderation",
+    "crates/plugins/zoey-plugin-rag-connectors",
+    "crates/plugins/zoey-plugin-search",
+    "crates/plugins/zoey-plugin-scheduler",
+    "crates/plugins/zoey-plugin-x402-video",
+    "crates/plugins/zoey-plugin-lifeengine",
+    
+    # Extensions
+    "crates/extensions/zoey-ext-workflow",
+    
+    # Adaptors (all consumer)
+    "crates/adaptors/zoey-adaptor-web",
+    "crates/adaptors/zoey-adaptor-discord",
+    "crates/adaptors/zoey-adaptor-telegram",
+    "crates/adaptors/zoey-adaptor-terminal",
+    
+    # Tools
+    "tools/generate-config",
+    "run-agent-ui",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["ZoeyOS Contributors"]
+repository = "https://github.com/Agent-Zoey/Zoey.git"
+description = "Privacy-first AI agent framework written in Rust"
+keywords = ["ai", "agents", "local-models", "ollama", "privacy"]
+categories = ["ai", "embedded", "privacy"]
+
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1.40", features = ["full"] }
+async-trait = "0.1"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Database
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "sqlite", "uuid", "chrono", "json"] }
+
+# HTTP
+reqwest = { version = "0.12", features = ["json"] }
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+# Error handling
+thiserror = "1.0"
+anyhow = "1.0"
+
+# UUID
+uuid = { version = "1.10", features = ["v4", "serde"] }
+
+# Crypto
+sha2 = "0.10"
+aes-gcm = "0.10"
+base64 = "0.22"
+argon2 = "0.5"
+rand = "0.8"
+
+# Template engine
+handlebars = "6.0"
+
+# Testing
+mockall = "0.13"
+
+# LLM providers
+async-openai = "0.24"
+futures-util = "0.3"
+
+# Utilities
+chrono = { version = "0.4", features = ["serde"] }
+
+# Regex for pattern matching
+regex = "1.10"
+
+# CLI tools
+clap = { version = "4.5", features = ["derive"] }
+
+# Environment variable loading
+dotenvy = "0.15"
+
+# Observability (REST API)
+axum = { version = "0.7", features = ["macros", "ws"] }
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors", "trace", "limit"] }
+
+# MCP support
+governor = "0.6"
+tokio-tungstenite = "0.21"
+
+# Binary data handling
+bytes = "1.5"

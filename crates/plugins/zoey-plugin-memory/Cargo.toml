@@ -1,0 +1,14 @@
+[package]
+name = "zoey-plugin-memory"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+zoey-core = { path = "../../core/zoey-core" }
+async-trait = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true, features = ["v4", "serde"] }
+tracing = { workspace = true }
+zoey-plugin-knowledge = { path = "../zoey-plugin-knowledge" }

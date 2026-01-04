@@ -1,0 +1,50 @@
+name: patient_intake_workflow
+version: "1.0"
+description: Patient intake and triage workflow for healthcare applications
+
+variables:
+  facility_name: "General Hospital"
+  default_priority: "medium"
+
+steps:
+  - name: validate_input
+    action: REPLY
+    inputs:
+      message: "Validating patient input..."
+    on_success: continue
+    on_failure: abort
+    max_retries: 0
+    timeout_ms: 5000
+
+  - name: check_history
+    action: SEND_MESSAGE
+    inputs:
+      message: "Checking patient history..."
+    depends_on: [validate_input]
+    on_success: continue
+    on_failure: continue  # Continue even if history check fails
+    max_retries: 2
+    retry_backoff_ms: 1000
+    timeout_ms: 10000
+
+  - name: triage_assessment
+    action: REPLY
+    inputs:
+      message: "Performing triage assessment..."
+    depends_on: [check_history]
+    on_success: continue
+    on_failure: abort
+    max_retries: 1
+    timeout_ms: 30000
+
+  - name: send_notification
+    action: SEND_MESSAGE
+    inputs:
+      message: "Sending notification to provider..."
+    depends_on: [triage_assessment]
+    condition: "{{steps.triage_assessment.result.priority}} == 'high'"
+    on_success: continue
+    on_failure: continue  # Don't abort if notification fails
+    max_retries: 3
+    timeout_ms: 15000
+

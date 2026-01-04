@@ -1,0 +1,59 @@
+[package]
+name = "zoey-plugin-knowledge"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Knowledge foundation for ZoeyAI - document ingestion, knowledge graphs, and advanced retrieval"
+
+[dependencies]
+# Workspace dependencies
+zoey-core = { path = "../../core/zoey-core" }
+tokio = { workspace = true }
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+tracing = { workspace = true }
+regex = { workspace = true }
+
+# Document parsing
+pdf-extract = "0.7"
+lopdf = "0.33"
+pulldown-cmark = "0.11"  # Markdown parsing
+csv = "1.3"
+
+# NLP and entity extraction
+rust-stemmers = "1.2"
+unicode-segmentation = "1.12"
+
+# Graph structures
+petgraph = "0.6"
+
+# Similarity and search
+ndarray = "0.16"
+
+[features]
+default = []
+knowledge_real = ["dep:ort", "dep:openai-api"]
+
+[dependencies.ort]
+version = "2.0.0-rc.10"
+optional = true
+
+[dependencies.openai-api]
+version = "0.1.4"
+optional = true
+
+[dev-dependencies]
+mockall = { workspace = true }
+tempfile = "3.13"
+criterion = "0.5"
+
+[[bench]]
+name = "retrieval"
+harness = false

@@ -1,0 +1,55 @@
+{
+  "tokens": {
+    "zoey-plugin-local-vector": "local-vector",
+    "zoey-plugin-local-llm": "local-llm",
+    "zoey-plugin-openai": "openai",
+    "zoey-plugin-anthropic": "anthropic",
+    "zoey-plugin-bootstrap": "bootstrap",
+    "zoey-plugin-explainability": "explainability",
+    "zoey-plugin-workflow": "workflow",
+    "zoey-plugin-knowledge": "knowledge",
+    "zoey-plugin-ml": "ml",
+    "zoey-plugin-judgment": "judgment",
+    "zoey-plugin-judgement": "judgment",
+    "zoey-plugin-sql": "sql",
+    "zoey-plugin-lifeengine": "lifeengine",
+    "discord": "discord"
+  },
+  "plugins": {
+    "local-vector": { "data_dir": "./data/vectors" },
+    "sql": { "database_url": "" },
+    "production": {
+      "enable_orchestration": true,
+      "cascade_strategy": "adaptive",
+      "enable_quantization": false,
+      "enable_compression": true,
+      "compression_ratio": 0.5,
+      "enable_forgetting": true,
+      "forgetting_halflife_days": 30,
+      "enable_hipaa": true,
+      "enable_gdpr": true,
+      "enable_fda": false,
+      "auto_audit": false,
+      "audit_interval_days": 30
+    }
+    ,
+    "adaptive": {
+      "enable_lora": true,
+      "lora_rank": 8,
+      "lora_alpha": 16,
+      "enable_replay": true,
+      "replay_buffer_size": 1000,
+      "enable_ewc": true,
+      "ewc_lambda": 0.5,
+      "enable_distillation": false,
+      "distillation_temperature": 0.5,
+      "learning_rate": 3e-4,
+      "min_feedback_quality": 0.7,
+      "framework": "PyTorch",
+      "base_model_path": "./models/base-llama",
+      "output_model_path": "./models/zoey_lora_merged",
+      "apply_script_path": "./scripts/apply_peft_lora.py",
+      "lora_adapter_path": "./models/zoey_lora_adapter"
+    }
+  }
+}

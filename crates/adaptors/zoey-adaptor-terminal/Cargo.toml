@@ -1,0 +1,11 @@
+[package]
+name = "zoey-adaptor-terminal"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+zoey-core = { path = "../../core/zoey-core" }
+tokio = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+chrono = { workspace = true }
+regex = { workspace = true }

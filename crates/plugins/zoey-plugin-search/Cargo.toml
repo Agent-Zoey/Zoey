@@ -1,0 +1,18 @@
+[package]
+name = "zoey-plugin-search"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Web search with caching for ZoeyAI; feeds RAG and answers"
+
+[dependencies]
+zoey-core = { path = "../../core/zoey-core" }
+async-trait = "0.1"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+uuid = { version = "1.10", features = ["serde", "v4"] }
+tracing = "0.1"
+reqwest = { version = "0.12", features = ["json"] }
+chrono = { version = "0.4", features = ["serde"] }
+regex = "1.10"
+anyhow = "1.0"

@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        tier: [core, providers, storage, plugins, extensions, adaptors]
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+      - name: Build tier
+        run: |
+          case "${{ matrix.tier }}" in \
+            core) cargo check -p zoey-core ;; \
+            providers) cargo check -p zoey-provider-openai -p zoey-provider-anthropic -p zoey-provider-local -p zoey-provider-router ;; \
+            storage) cargo check -p zoey-storage-sql -p zoey-storage-vector ;; \
+            plugins) cargo check -p zoey-plugin-bootstrap -p zoey-plugin-knowledge -p zoey-plugin-compliance -p zoey-plugin-hardware -p zoey-plugin-observability -p zoey-plugin-memory ;; \
+            extensions) cargo check -p zoey-ext-workflow -p zoey-ext-mcp -p zoey-ext-production -p zoey-ext-distributed ;; \
+            adaptors) cargo check -p zoey-adaptor-web -p zoey-adaptor-terminal -p zoey-adaptor-discord ;; \
+          esac
+      - name: Test minimal
+        run: |
+          cargo test -p zoey-provider-router -p zoey-ext-distributed -p zoey-core -p zoey-provider-local --quiet

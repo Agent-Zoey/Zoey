@@ -1,0 +1,31 @@
+[package]
+name = "zoey-provider-local"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Local LLM integration for ZoeyAI — llama.cpp, Ollama, local models"
+
+[dependencies]
+zoey-core = { path = "../../core/zoey-core" }
+
+# Async
+tokio = { workspace = true }
+async-trait = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# HTTP for local APIs
+reqwest = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tokio-test = "0.4"

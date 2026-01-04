@@ -1,0 +1,45 @@
+[package]
+name = "run-agent-ui"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Core
+zoey-core = { path = "../crates/core/zoey-core" }
+
+# Adaptors
+zoey-adaptor-web = { path = "../crates/adaptors/zoey-adaptor-web" }
+zoey-adaptor-discord = { path = "../crates/adaptors/zoey-adaptor-discord", features = ["voice-whisper", "voice-unmute", "voice-moshi"] }
+zoey-adaptor-telegram = { path = "../crates/adaptors/zoey-adaptor-telegram", features = ["voice-whisper"] }
+zoey-adaptor-terminal = { path = "../crates/adaptors/zoey-adaptor-terminal" }
+
+# Providers
+zoey-provider-voice = { path = "../crates/providers/zoey-provider-voice", features = ["whisper", "unmute", "moshi"] }
+zoey-provider-openai = { path = "../crates/providers/zoey-provider-openai" }
+zoey-provider-local = { path = "../crates/providers/zoey-provider-local" }
+zoey-provider-anthropic = { path = "../crates/providers/zoey-provider-anthropic" }
+
+# Plugins
+zoey-plugin-bootstrap = { path = "../crates/plugins/zoey-plugin-bootstrap" }
+zoey-plugin-observability = { path = "../crates/plugins/zoey-plugin-observability" }
+zoey-plugin-knowledge = { path = "../crates/plugins/zoey-plugin-knowledge" }
+zoey-plugin-x402-video = { path = "../crates/plugins/zoey-plugin-x402-video" }
+zoey-plugin-lifeengine = { path = "../crates/plugins/zoey-plugin-lifeengine" }
+
+# Extensions
+zoey-ext-workflow = { path = "../crates/extensions/zoey-ext-workflow" }
+
+# Storage
+zoey-storage-vector = { path = "../crates/storage/zoey-storage-vector" }
+zoey-storage-sql = { path = "../crates/storage/zoey-storage-sql" }
+
+# External
+serenity = "0.12"
+tokio = { workspace = true }
+serde_json = { workspace = true }
+dotenvy = "0.15"
+clap = { version = "4", features = ["derive", "env"] }
+
+[[bin]]
+name = "run-agent-ui"
+path = "../scripts/run_agent_ui.rs"

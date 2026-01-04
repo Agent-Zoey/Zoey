@@ -1,0 +1,42 @@
+[package]
+name = "zoey-adaptor-telegram"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Telegram adapter using teloxide to connect Zoey agents to Telegram"
+
+[dependencies]
+zoey-core = { path = "../../core/zoey-core" }
+zoey-provider-voice = { path = "../../providers/zoey-provider-voice", optional = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+async-trait = { workspace = true }
+teloxide = { version = "0.13", features = ["macros"] }
+reqwest = { version = "0.11", features = ["json", "stream"] }
+bytes = { workspace = true }
+rand = { workspace = true }
+futures-util = { workspace = true }
+
+# Audio format conversion (for voice message transcription)
+ogg = { version = "0.9", optional = true }
+lewton = { version = "0.10", optional = true }
+
+[features]
+default = []
+# Basic voice (TTS only)
+voice = ["zoey-provider-voice"]
+# Voice with Whisper STT (transcribe voice messages)
+voice-whisper = ["voice", "zoey-provider-voice/whisper", "ogg", "lewton"]
+# Voice with Unmute STT/TTS (premium GPU)
+voice-unmute = ["voice", "zoey-provider-voice/unmute", "ogg", "lewton"]
+# Full voice capabilities  
+voice-full = ["voice-whisper", "voice-unmute"]
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

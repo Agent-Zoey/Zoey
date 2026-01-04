@@ -1,0 +1,223 @@
+<p align="center">
+  <img src="../../assets/zoey-eye.png" alt="Zoey" width="400" />
+</p>
+
+<p align="center">
+  <em>Always watching over your code</em>
+</p>
+
+# 🔐 zoey-core
+
+> **Your secrets are safe with Zoey**
+
+The foundational crate powering ZoeyOS—providing the runtime, plugin system, type definitions, and agent API.
+
+## Status: ✅ Production
+
+---
+
+## Features
+
+### 🚀 Agent Runtime
+- Async-first runtime built on Tokio
+- Plugin lifecycle management
+- Service orchestration
+- Configuration management
+
+### 🔌 Plugin System
+- Dynamic plugin loading
+- Action, provider, and evaluator registration
+- Plugin dependency resolution
+- Hot-reloading support (planned)
+
+### 🎭 Agent API
+- HTTP REST endpoints for agent interaction
+- WebSocket support for real-time communication
+- Authentication and authorization
+- Rate limiting and request validation
+
+### 📦 Core Types
+- Memory and knowledge structures
+- Message and conversation models
+- Agent configuration and state
+- Provider and action interfaces
+
+---
+
+## Quick Start
+
+```rust
+use zoey_core::{AgentRuntime, RuntimeOpts};
+
+#[tokio::main]
+async fn main() -> zoey_core::Result<()> {
+    // Create runtime with default options
+    let opts = RuntimeOpts::default();
+    let runtime = AgentRuntime::new(opts).await?;
+    
+    // Zoey is ready to serve
+    println!("🔐 Zoey runtime initialized");
+    
+    Ok(())
+}
+```
+
+## With Plugins
+
+```rust
+use zoey_core::{AgentRuntime, RuntimeOpts};
+use std::sync::Arc;
+
+let mut opts = RuntimeOpts::default();
+
+// Add plugins
+opts.add_plugin(Arc::new(BootstrapPlugin::new()));
+opts.add_plugin(Arc::new(KnowledgePlugin::new()));
+opts.add_plugin(Arc::new(CompliancePlugin::new()));
+
+let runtime = AgentRuntime::new(opts).await?;
+```
+
+---
+
+## Architecture
+
+```
+zoey-core
+├── runtime/          # Agent runtime and lifecycle
+│   ├── mod.rs        # AgentRuntime implementation
+│   ├── opts.rs       # RuntimeOpts configuration
+│   └── services.rs   # Service orchestration
+├── plugin/           # Plugin system
+│   ├── mod.rs        # Plugin trait and registry
+│   ├── loader.rs     # Dynamic plugin loading
+│   └── context.rs    # Plugin execution context
+├── agent_api/        # HTTP/WebSocket API
+│   ├── handlers.rs   # Request handlers
+│   ├── routes.rs     # Route definitions
+│   └── auth.rs       # Authentication
+├── types/            # Core type definitions
+│   ├── memory.rs     # Memory structures
+│   ├── message.rs    # Message models
+│   └── agent.rs      # Agent configuration
+└── lib.rs            # Public API exports
+```
+
+---
+
+## Core Traits
+
+### Plugin Trait
+
+```rust
+#[async_trait]
+pub trait Plugin: Send + Sync {
+    fn name(&self) -> &str;
+    fn description(&self) -> &str;
+    
+    async fn init(&self, runtime: &AgentRuntime) -> Result<()>;
+    
+    fn actions(&self) -> Vec<Arc<dyn Action>>;
+    fn providers(&self) -> Vec<Arc<dyn Provider>>;
+    fn evaluators(&self) -> Vec<Arc<dyn Evaluator>>;
+}
+```
+
+### Action Trait
+
+```rust
+#[async_trait]
+pub trait Action: Send + Sync {
+    fn name(&self) -> &str;
+    fn description(&self) -> &str;
+    fn examples(&self) -> Vec<Example>;
+    
+    async fn validate(&self, input: &ActionInput) -> Result<bool>;
+    async fn execute(&self, ctx: ActionContext) -> Result<ActionOutput>;
+}
+```
+
+### Provider Trait
+
+```rust
+#[async_trait]
+pub trait Provider: Send + Sync {
+    fn name(&self) -> &str;
+    
+    async fn get(&self, ctx: &ProviderContext) -> Result<ProviderOutput>;
+}
+```
+
+---
+
+## Configuration
+
+### Environment Variables
+
+```bash
+# Runtime configuration
+ZOEY_LOG_LEVEL=info
+ZOEY_MAX_WORKERS=4
+ZOEY_PLUGIN_DIR=./plugins
+
+# API configuration
+ZOEY_API_HOST=127.0.0.1
+ZOEY_API_PORT=3000
+ZOEY_API_CORS_ORIGINS=http://localhost:3000
+
+# Storage configuration
+ZOEY_DATA_DIR=./.zoey/db
+ZOEY_DB_PATH=./.zoey/db/zoey.db
+```
+
+### Programmatic Configuration
+
+```rust
+let opts = RuntimeOpts {
+    log_level: LogLevel::Info,
+    max_workers: 4,
+    plugin_dir: PathBuf::from("./plugins"),
+    api_host: "127.0.0.1".to_string(),
+    api_port: 3000,
+    ..Default::default()
+};
+```
+
+---
+
+## Dependencies
+
+This crate has minimal external dependencies:
+
+- `tokio` - Async runtime
+- `axum` - HTTP framework
+- `sqlx` - Database access
+- `serde` - Serialization
+- `tracing` - Logging and diagnostics
+
+---
+
+## Testing
+
+```bash
+# Run unit tests
+cargo test -p zoey-core
+
+# Run with logging
+RUST_LOG=debug cargo test -p zoey-core -- --nocapture
+
+# Run specific test
+cargo test -p zoey-core test_runtime_init
+```
+
+---
+
+## License
+
+MIT License - See [LICENSE](../../../LICENSE) for details.
+
+---
+
+<p align="center">
+  <strong>🔐 Your secrets are safe with Zoey</strong>
+</p>

@@ -1,0 +1,27 @@
+[package]
+name = "zoey-adaptor-web"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Simple web UI to interact with Zoey via Agent API"
+
+[dependencies]
+zoey-core = { path = "../../core/zoey-core" }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+axum = { workspace = true }
+tower = { workspace = true }
+tower-http = { workspace = true, features = ["cors", "trace"] }
+uuid = { workspace = true }
+chrono = { workspace = true }
+reqwest = { version = "0.11", features = ["json", "stream"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
+futures-util = "0.3"
+regex = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

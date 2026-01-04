@@ -1,0 +1,5 @@
+{
+  "devDependencies": {
+    "dotenv": "^17.2.3"
+  }
+}

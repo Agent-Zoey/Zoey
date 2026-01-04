@@ -1,0 +1,32 @@
+[package]
+name = "zoey-plugin-lifeengine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Life Engine plugin for ZoeyAI - AI souls with personality, emotion, drive, and mental processes inspired by OpenSouls"
+
+[dependencies]
+# Workspace dependencies
+zoey-core = { path = "../../core/zoey-core" }
+tokio = { workspace = true }
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+tracing = { workspace = true }
+
+# Random for sampling and stochastic processes
+rand = "0.8"
+
+# For emotion model smoothing
+ordered-float = "4.2"
+
+[dev-dependencies]
+mockall = { workspace = true }
+tokio-test = "0.4"
+

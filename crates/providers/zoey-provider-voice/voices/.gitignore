@@ -1,0 +1,13 @@
+# Piper TTS files (downloaded at runtime)
+piper
+lib/
+*.onnx
+*.onnx.json
+piper_http.py
+start-piper.sh
+piper-tts.service
+piper.log
+nohup.out
+
+# Keep this .gitignore
+!.gitignore

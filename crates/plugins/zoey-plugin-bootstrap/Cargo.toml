@@ -1,0 +1,39 @@
+[package]
+name = "zoey-plugin-bootstrap"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Bootstrap plugin with essential actions, providers, and evaluators for ZoeyAI"
+
+[dependencies]
+zoey-core = { path = "../../core/zoey-core" }
+
+# Async
+tokio = { workspace = true }
+async-trait = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+# UUID
+uuid = { workspace = true }
+
+# Utilities
+chrono = { workspace = true }
+
+# Random (for tests/sampling)
+rand = "0.8"
+
+[dev-dependencies]
+mockall = { workspace = true }
+tokio-test = "0.4"
