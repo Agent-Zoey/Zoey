@@ -147,5 +147,61 @@ module.exports = {
       log_file: '/root/zoey-rust/logs/zoey-law-combined.log',
       time: true,
     },
+    // Zoey Demo - Public demo instance for zoey.xyz
+    {
+      name: 'zoey-demo',
+      script: './target/release/run-agent-ui',
+      cwd: '/root/zoey-rust',
+      interpreter: 'none',
+      env: {
+        // Library path for Vosk STT
+        LD_LIBRARY_PATH: '/usr/local/lib',
+        
+        // API Keys - loaded from .env via dotenv
+        OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+        ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+        OPENAI_MODEL: process.env.OPENAI_MODEL || 'gpt-4',
+        
+        // Database - separate from main agent
+        DATABASE_URL: 'sqlite:./zoey-demo.db',
+        
+        // Observability settings
+        OBSERVABILITY_ENABLED: 'true',
+        OBSERVABILITY_COST_TRACKING_ENABLED: 'true',
+        OBSERVABILITY_DASHBOARD_ENABLED: 'false',
+        OBSERVABILITY_REST_API_ENABLED: 'false',
+        
+        // Agent API and UI - bind to all interfaces for zoey.xyz
+        AGENT_API_ENABLED: 'true',
+        AGENT_API_HOST: '0.0.0.0',
+        AGENT_API_PORT: '9092',
+        SIMPLE_UI_ENABLED: 'true',
+        SIMPLE_UI_HOST: '0.0.0.0',
+        SIMPLE_UI_PORT: '4002',
+        AGENT_LOGS_ENABLED: 'false',
+        UI_STREAMING: 'true',
+        UI_LOGS_ENABLED: 'false',
+        
+        // Disable Telegram and Discord for public demo
+        TELEGRAM_ENABLED: 'false',
+        DISCORD_ENABLED: 'false',
+        
+        // Rate limiting for public demo
+        RATE_LIMIT_ENABLED: 'true',
+        RATE_LIMIT_REQUESTS_PER_MINUTE: '10',
+        
+        // Logging - minimal for production
+        RUST_LOG: 'warn,zoey_core=info,zoey_adaptor_web=info',
+      },
+      args: '--log-level "warn,zoey_core=info"',
+      instances: 1,
+      autorestart: true,
+      watch: false,
+      max_memory_restart: '2G',
+      error_file: '/root/zoey-rust/logs/zoey-demo-error.log',
+      out_file: '/root/zoey-rust/logs/zoey-demo-out.log',
+      log_file: '/root/zoey-rust/logs/zoey-demo-combined.log',
+      time: true,
+    },
   ],
 };

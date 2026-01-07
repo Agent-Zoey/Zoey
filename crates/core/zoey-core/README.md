@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="../../assets/zoey-eye.png" alt="Zoey" width="400" />
+  <img src="https://raw.githubusercontent.com/Agent-Zoey/Zoey/main/crates/assets/zoey-eye.png" alt="Zoey" width="400" />
 </p>
 
 <p align="center">
@@ -8,11 +8,22 @@
 
 # 🔐 zoey-core
 
+[![Crates.io](https://img.shields.io/crates/v/zoey-core.svg)](https://crates.io/crates/zoey-core)
+[![Documentation](https://docs.rs/zoey-core/badge.svg)](https://docs.rs/zoey-core)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 > **Your secrets are safe with Zoey**
 
-The foundational crate powering ZoeyOS—providing the runtime, plugin system, type definitions, and agent API.
+The foundational crate powering ZoeyOS—providing the runtime, plugin system, type definitions, and agent API. Built for privacy-first AI agents optimized for local model deployment.
 
-## Status: ✅ Production
+## Installation
+
+Add to your `Cargo.toml`:
+
+```toml
+[dependencies]
+zoey-core = "0.1"
+```
 
 ---
 
@@ -214,7 +225,7 @@ cargo test -p zoey-core test_runtime_init
 
 ## License
 
-MIT License - See [LICENSE](../../../LICENSE) for details.
+MIT License - See [LICENSE](https://github.com/Agent-Zoey/Zoey/blob/main/LICENSE) for details.
 
 ---
 
