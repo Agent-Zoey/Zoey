@@ -61,5 +61,5 @@ node_modules/
 #archive
 archive/
 
-# Meta-crate
+#meta-crate
 crates/zoey/
