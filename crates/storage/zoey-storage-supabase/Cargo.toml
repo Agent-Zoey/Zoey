@@ -12,7 +12,7 @@ default = []
 hipaa = []  # Enable HIPAA compliance features (optional)
 
 [dependencies]
-zoey-core = { path = "../../core/zoey-core" }
+zoey-core = { version = "0.1.0", path = "../../core/zoey-core" }
 
 # Async
 tokio = { workspace = true }
