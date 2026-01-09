@@ -253,6 +253,43 @@ pub fn parse_character_xml(xml: &str) -> Result<Character> {
         }
     }
 
+    // Extract storage configuration
+    if let Some(storage_section) = extract_section(xml, "storage") {
+        if let Some(adapter) = extract_tag_content(&storage_section, "adapter") {
+            if let Ok(storage_type) = adapter.parse::<StorageType>() {
+                character.storage.adapter = storage_type;
+            }
+        }
+        if let Some(url) = extract_tag_content(&storage_section, "url") {
+            // Support environment variable substitution for sensitive data
+            let resolved_url = if url.starts_with("${") && url.ends_with("}") {
+                let env_var = &url[2..url.len() - 1];
+                std::env::var(env_var).ok()
+            } else {
+                Some(url)
+            };
+            character.storage.url = resolved_url;
+        }
+        if let Some(database) = extract_tag_content(&storage_section, "database") {
+            character.storage.database = Some(database);
+        }
+        if let Some(api_key) = extract_tag_content(&storage_section, "api_key") {
+            // Support environment variable substitution
+            let resolved_key = if api_key.starts_with("${") && api_key.ends_with("}") {
+                let env_var = &api_key[2..api_key.len() - 1];
+                std::env::var(env_var).ok()
+            } else {
+                Some(api_key)
+            };
+            character.storage.api_key = resolved_key;
+        }
+        if let Some(dim) = extract_tag_content(&storage_section, "embedding_dimension") {
+            if let Ok(d) = dim.parse::<usize>() {
+                character.storage.embedding_dimension = Some(d);
+            }
+        }
+    }
+
     // Extract voice configuration as a nested object
     if let Some(voice_section) = extract_section(xml, "voice") {
         let mut voice_config = serde_json::Map::new();

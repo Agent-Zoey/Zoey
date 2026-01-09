@@ -384,9 +384,32 @@ IMPORTANT: Only output the XML block.
         ]]></shouldRespond>
     </templates>
     
+    <!-- Storage Configuration -->
+    <!-- Supported adapters: sqlite, postgres, mongo, supabase -->
+    <storage>
+        <!-- Default: SQLite in-memory. Change to use persistent storage. -->
+        <adapter>sqlite</adapter>
+        
+        <!-- URL/connection string (supports ${ENV_VAR} substitution) -->
+        <!-- SQLite: file path or ":memory:" -->
+        <!-- Postgres: postgres://user:pass@host:port/db or ${DATABASE_URL} -->
+        <!-- MongoDB: mongodb://user:pass@host:port or ${MONGODB_URL} -->
+        <!-- Supabase: https://project.supabase.co or ${SUPABASE_URL} -->
+        <url>:memory:</url>
+        
+        <!-- MongoDB only: database name -->
+        <!-- <database>zoey</database> -->
+        
+        <!-- Supabase only: API key (use env var for security) -->
+        <!-- <api_key>${SUPABASE_KEY}</api_key> -->
+        
+        <!-- Optional: embedding dimension for vector search (default: 1536) -->
+        <!-- <embedding_dimension>1536</embedding_dimension> -->
+    </storage>
+    
     <plugins>
         <plugin>zoey-plugin-bootstrap</plugin>
-        <plugin>zoey-plugin-sql</plugin>
+        <plugin>zoey-storage-database</plugin>
         <plugin>zoey-plugin-openai</plugin>
         <plugin>zoey-plugin-voice</plugin>
         <plugin>zoey-plugin-knowledge</plugin>
