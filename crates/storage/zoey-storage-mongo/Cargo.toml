@@ -6,6 +6,9 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 description = "MongoDB database adapter for ZoeyAI"
+readme = "README.md"
+keywords = ["database", "mongodb", "ai", "agents", "zoey"]
+categories = ["database", "asynchronous"]
 
 [features]
 default = []
