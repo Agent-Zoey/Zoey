@@ -1,50 +1,55 @@
 [package]
 name = "zoey-core"
-version.workspace = true
-edition.workspace = true
-license.workspace = true
-authors.workspace = true
-repository.workspace = true
-description = "ZoeyAI core runtime and types — agent framework optimized for local models"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["ZoeyOS Contributors"]
+repository = "https://github.com/Agent-Zoey/Zoey"
+homepage = "https://github.com/Agent-Zoey/Zoey"
+documentation = "https://docs.rs/zoey-core"
+description = "ZoeyAI core runtime and types — privacy-first AI agent framework optimized for local models"
+readme = "README.md"
+keywords = ["ai", "agents", "local-models", "ollama", "privacy"]
+categories = ["asynchronous", "development-tools"]
 
 [dependencies]
 # Async
-tokio = { workspace = true }
-async-trait = { workspace = true }
+tokio = { version = "1.40", features = ["full"] }
+async-trait = "0.1"
 
 # Serialization
-serde = { workspace = true }
-serde_json = { workspace = true }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 
 # Database
-sqlx = { workspace = true }
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "sqlite", "uuid", "chrono", "json"] }
 
 # HTTP
-reqwest = { workspace = true }
+reqwest = { version = "0.12", features = ["json"] }
 
 # Logging
-tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 
 # Error handling
-thiserror = { workspace = true }
-anyhow = { workspace = true }
+thiserror = "1.0"
+anyhow = "1.0"
 
 # UUID
-uuid = { workspace = true }
+uuid = { version = "1.10", features = ["v4", "serde"] }
 
 # Crypto
-sha2 = { workspace = true }
-aes-gcm = { workspace = true }
-base64 = { workspace = true }
-argon2 = { workspace = true }
-rand = { workspace = true }
+sha2 = "0.10"
+aes-gcm = "0.10"
+base64 = "0.22"
+argon2 = "0.5"
+rand = "0.8"
 
 # Template engine
-handlebars = { workspace = true }
+handlebars = "6.0"
 
 # Utilities
-chrono = { workspace = true }
+chrono = { version = "0.4", features = ["serde"] }
 names = "0.14"
 once_cell = "1.19"
 regex = "1.10"
@@ -59,12 +64,12 @@ calamine = "0.26"
 rust-stemmers = "1.2"
 
 # Environment variables
-dotenvy = { workspace = true }
+dotenvy = "0.15"
 
 # Observability
-axum = { workspace = true }
-tower = { workspace = true }
-tower-http = { workspace = true }
+axum = { version = "0.7", features = ["macros", "ws"] }
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors", "trace", "limit"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
 futures-util = "0.3"
 async-openai = "0.24"
@@ -90,16 +95,10 @@ version = "0.23"
 optional = true
 
 [dev-dependencies]
-mockall = { workspace = true }
+mockall = "0.13"
 tokio-test = "0.4"
 criterion = "0.5"
 tempfile = "3.13"
-zoey-plugin-bootstrap = { path = "../../plugins/zoey-plugin-bootstrap" }
-zoey-storage-sql = { path = "../../storage/zoey-storage-sql" }
-zoey-provider-openai = { path = "../../providers/zoey-provider-openai" }
-zoey-provider-anthropic = { path = "../../providers/zoey-provider-anthropic" }
-zoey-provider-local = { path = "../../providers/zoey-provider-local" }
-zoey-plugin-memory = { path = "../../plugins/zoey-plugin-memory" }
 
 [[bench]]
 name = "performance"
@@ -108,27 +107,3 @@ harness = false
 [lib]
 name = "zoey_core"
 path = "src/lib.rs"
-
-[[example]]
-name = "basic_agent"
-path = "../../../examples/basic_agent.rs"
-
-[[example]]
-name = "standard_agent"
-path = "../../../examples/standard_agent.rs"
-
-[[example]]
-name = "advanced_agent"
-path = "../../../examples/advanced_agent.rs"
-
-[[example]]
-name = "multi_agent_coordination"
-path = "../../../examples/multi_agent_coordination.rs"
-
-[[example]]
-name = "interactive_agent"
-path = "../../../examples/interactive_agent.rs"
-
-[[example]]
-name = "dynamic_prompts_example"
-path = "../../../examples/dynamic_prompts_example.rs"

@@ -1,0 +1,54 @@
+[package]
+name = "zoey-storage-mongo"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "MongoDB database adapter for ZoeyAI"
+
+[features]
+default = []
+hipaa = []  # Enable HIPAA compliance features (optional)
+
+[dependencies]
+zoey-core = { path = "../../core/zoey-core" }
+
+# Async
+tokio = { workspace = true }
+async-trait = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# MongoDB driver
+mongodb = { version = "3.1", features = ["sync"] }
+
+# Logging
+tracing = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+# UUID
+uuid = { workspace = true }
+
+# Utilities
+chrono = { workspace = true }
+
+# Regex for PII detection
+regex = "1.10"
+
+# Futures for stream handling
+futures = "0.3"
+
+[dev-dependencies]
+mockall = { workspace = true }
+tokio-test = "0.4"
+criterion = { version = "0.5", features = ["async_tokio"] }
+
+[[bench]]
+name = "database_performance"
+harness = false

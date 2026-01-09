@@ -2,7 +2,7 @@ use zoey_core::observability::{set_global_cost_tracker, CostTracker, Observabili
 use zoey_core::IDatabaseAdapter;
 use zoey_core::{
     agent_api::{AgentApiConfig, AgentApiServer},
-    types::InitializeOptions,
+    types::{InitializeOptions, StorageType},
     AgentRuntime, RuntimeOpts,
 };
 use zoey_ext_workflow::WorkflowPlugin;
@@ -15,6 +15,8 @@ use zoey_provider_anthropic::AnthropicPlugin;
 use zoey_provider_local::LocalLLMPlugin;
 use zoey_provider_openai::OpenAIPlugin;
 use zoey_storage_sql::{PostgresAdapter, SqliteAdapter};
+use zoey_storage_mongo::MongoAdapter;
+use zoey_storage_supabase::SupabaseAdapter;
 use zoey_storage_vector::LocalVectorPlugin;
 
 use std::collections::HashMap;
@@ -71,7 +73,7 @@ fn main() -> zoey_core::Result<()> {
     if std::env::var("OBSERVABILITY_REST_API_PORT").is_err() { std::env::set_var("OBSERVABILITY_REST_API_PORT", "9100"); }
     if std::env::var("AGENT_LOGS_ENABLED").is_err() { std::env::set_var("AGENT_LOGS_ENABLED", "true"); }
     // Create a baseline runtime with ZoeyAI character and Bootstrap plugin
-    let character_path = std::env::var("CHARACTER_FILE").unwrap_or_else(|_| "characters/zoey-bot.xml".to_string());
+    let character_path = std::env::var("CHARACTER_FILE").unwrap_or_else(|_| "characters/zoey-agent-sql.xml".to_string());
     let character = zoey_core::load_character_from_xml(&character_path).unwrap_or_else(|_| Character {
         name: "ZoeyAI".to_string(),
         bio: vec![
@@ -658,43 +660,125 @@ async fn build_plugins_and_adapter(
                 normalized.push("mcp".to_string());
                 None
             }
-            "zoey-plugin-sql" | "sql" => {
-                normalized.push("sql".to_string());
-                let adapter_choice = std::env::var("DATABASE_URL").ok().or_else(|| {
-                    plugin_cfg
-                        .get("sql")
-                        .and_then(|v| v.get("database_url"))
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string())
-                });
-                adapter = match adapter_choice {
-                    Some(url)
-                        if url.starts_with("postgres://") || url.starts_with("postgresql://") =>
-                    {
-                        match PostgresAdapter::new(&url).await {
-                            Ok(mut pg) => match pg.initialize(None).await {
-                                Ok(_) => Some(Arc::new(pg)
-                                    as Arc<dyn zoey_core::IDatabaseAdapter + Send + Sync>),
-                                Err(_) => None,
-                            },
-                            Err(_) => None,
-                        }
-                    }
-                    Some(url) if url.starts_with("sqlite:") || url.starts_with("sqlite://") => {
+            "zoey-plugin-sql" | "sql" | "zoey-storage-sql" | "zoey-storage-mongo" | "zoey-storage-supabase" | "zoey-storage-database" | "storage" | "database" => {
+                normalized.push("storage".to_string());
+                // Use storage config from character, with env var fallback
+                let storage_config = &character.storage;
+                
+                adapter = match storage_config.adapter {
+                    StorageType::Sqlite => {
+                        let url = storage_config.url.clone()
+                            .or_else(|| std::env::var("DATABASE_URL").ok())
+                            .or_else(|| plugin_cfg.get("sql").and_then(|v| v.get("database_url")).and_then(|v| v.as_str()).map(|s| s.to_string()))
+                            .unwrap_or_else(|| ":memory:".to_string());
                         match SqliteAdapter::new(&url).await {
                             Ok(mut sqlite) => match sqlite.initialize(None).await {
-                                Ok(_) => Some(Arc::new(sqlite)
-                                    as Arc<dyn zoey_core::IDatabaseAdapter + Send + Sync>),
-                                Err(_) => None,
+                                Ok(_) => {
+                                    tracing::info!("Initialized SQLite storage: {}", if url == ":memory:" { "in-memory" } else { &url });
+                                    Some(Arc::new(sqlite) as Arc<dyn zoey_core::IDatabaseAdapter + Send + Sync>)
+                                }
+                                Err(e) => {
+                                    tracing::error!("Failed to initialize SQLite: {}", e);
+                                    None
+                                }
                             },
-                            Err(_) => None,
+                            Err(e) => {
+                                tracing::error!("Failed to create SQLite adapter: {}", e);
+                                None
+                            }
                         }
                     }
-                    _ => {
-                        match SqliteAdapter::new(":memory:").await {
-                            Ok(sqlite) => Some(Arc::new(sqlite)
-                                as Arc<dyn zoey_core::IDatabaseAdapter + Send + Sync>),
-                            Err(_) => None,
+                    StorageType::Postgres => {
+                        let url = storage_config.url.clone()
+                            .or_else(|| std::env::var("DATABASE_URL").ok())
+                            .or_else(|| plugin_cfg.get("sql").and_then(|v| v.get("database_url")).and_then(|v| v.as_str()).map(|s| s.to_string()));
+                        match url {
+                            Some(url) => {
+                                match PostgresAdapter::new(&url).await {
+                                    Ok(mut pg) => match pg.initialize(None).await {
+                                        Ok(_) => {
+                                            tracing::info!("Initialized PostgreSQL storage");
+                                            Some(Arc::new(pg) as Arc<dyn zoey_core::IDatabaseAdapter + Send + Sync>)
+                                        }
+                                        Err(e) => {
+                                            tracing::error!("Failed to initialize PostgreSQL: {}", e);
+                                            None
+                                        }
+                                    },
+                                    Err(e) => {
+                                        tracing::error!("Failed to create PostgreSQL adapter: {}", e);
+                                        None
+                                    }
+                                }
+                            }
+                            None => {
+                                tracing::error!("PostgreSQL selected but no DATABASE_URL provided");
+                                None
+                            }
+                        }
+                    }
+                    StorageType::Mongo => {
+                        let url = storage_config.url.clone()
+                            .or_else(|| std::env::var("MONGODB_URL").ok())
+                            .or_else(|| std::env::var("MONGO_URL").ok());
+                        let db_name = storage_config.database.clone()
+                            .or_else(|| std::env::var("MONGODB_DATABASE").ok())
+                            .unwrap_or_else(|| "zoey".to_string());
+                        match url {
+                            Some(url) => {
+                                match MongoAdapter::new(&url, &db_name).await {
+                                    Ok(mut mongo) => match mongo.initialize(None).await {
+                                        Ok(_) => {
+                                            tracing::info!("Initialized MongoDB storage: {}", db_name);
+                                            Some(Arc::new(mongo) as Arc<dyn zoey_core::IDatabaseAdapter + Send + Sync>)
+                                        }
+                                        Err(e) => {
+                                            tracing::error!("Failed to initialize MongoDB: {}", e);
+                                            None
+                                        }
+                                    },
+                                    Err(e) => {
+                                        tracing::error!("Failed to create MongoDB adapter: {}", e);
+                                        None
+                                    }
+                                }
+                            }
+                            None => {
+                                tracing::error!("MongoDB selected but no MONGODB_URL provided");
+                                None
+                            }
+                        }
+                    }
+                    StorageType::Supabase => {
+                        let url = storage_config.url.clone()
+                            .or_else(|| std::env::var("SUPABASE_URL").ok());
+                        let api_key = storage_config.api_key.clone()
+                            .or_else(|| std::env::var("SUPABASE_KEY").ok())
+                            .or_else(|| std::env::var("SUPABASE_ANON_KEY").ok());
+                        match (url, api_key) {
+                            (Some(url), Some(key)) => {
+                                let config = zoey_storage_supabase::SupabaseConfig::new(url, key);
+                                match SupabaseAdapter::new(config).await {
+                                    Ok(mut supabase) => match supabase.initialize(None).await {
+                                        Ok(_) => {
+                                            tracing::info!("Initialized Supabase storage");
+                                            Some(Arc::new(supabase) as Arc<dyn zoey_core::IDatabaseAdapter + Send + Sync>)
+                                        }
+                                        Err(e) => {
+                                            tracing::error!("Failed to initialize Supabase: {}", e);
+                                            None
+                                        }
+                                    },
+                                    Err(e) => {
+                                        tracing::error!("Failed to create Supabase adapter: {}", e);
+                                        None
+                                    }
+                                }
+                            }
+                            _ => {
+                                tracing::error!("Supabase selected but SUPABASE_URL or SUPABASE_KEY not provided");
+                                None
+                            }
                         }
                     }
                 };

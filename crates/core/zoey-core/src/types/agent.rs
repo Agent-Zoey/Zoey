@@ -4,6 +4,80 @@ use super::primitives::{Metadata, UUID};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+/// Storage adapter type
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum StorageType {
+    /// SQLite database (default)
+    Sqlite,
+    /// PostgreSQL database
+    Postgres,
+    /// MongoDB database
+    Mongo,
+    /// Supabase (PostgreSQL with REST API)
+    Supabase,
+}
+
+impl Default for StorageType {
+    fn default() -> Self {
+        StorageType::Sqlite
+    }
+}
+
+impl std::fmt::Display for StorageType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            StorageType::Sqlite => write!(f, "sqlite"),
+            StorageType::Postgres => write!(f, "postgres"),
+            StorageType::Mongo => write!(f, "mongo"),
+            StorageType::Supabase => write!(f, "supabase"),
+        }
+    }
+}
+
+impl std::str::FromStr for StorageType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "sqlite" | "sqlite3" => Ok(StorageType::Sqlite),
+            "postgres" | "postgresql" | "pg" => Ok(StorageType::Postgres),
+            "mongo" | "mongodb" => Ok(StorageType::Mongo),
+            "supabase" => Ok(StorageType::Supabase),
+            _ => Err(format!("Unknown storage type: {}", s)),
+        }
+    }
+}
+
+/// Storage configuration for the agent
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StorageConfig {
+    /// Storage adapter type (sqlite, postgres, mongo, supabase)
+    #[serde(default)]
+    pub adapter: StorageType,
+
+    /// Database URL or connection string
+    /// - SQLite: file path or ":memory:"
+    /// - Postgres: postgres://user:pass@host:port/db
+    /// - MongoDB: mongodb://user:pass@host:port/db
+    /// - Supabase: https://project.supabase.co
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+
+    /// Database name (for MongoDB)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub database: Option<String>,
+
+    /// API key (for Supabase)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub api_key: Option<String>,
+
+    /// Embedding dimension for vector search
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub embedding_dimension: Option<usize>,
+}
+
 /// Character definition for an agent
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -70,6 +144,10 @@ pub struct Character {
     /// Model provider (e.g., "openai", "anthropic")
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model_provider: Option<String>,
+
+    /// Storage configuration
+    #[serde(default)]
+    pub storage: StorageConfig,
 }
 
 /// Message example for character training
@@ -188,6 +266,7 @@ impl Default for Character {
             plugins: Vec::new(),
             clients: Vec::new(),
             model_provider: None,
+            storage: StorageConfig::default(),
         }
     }
 }

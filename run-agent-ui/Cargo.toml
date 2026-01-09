@@ -32,11 +32,14 @@ zoey-ext-workflow = { path = "../crates/extensions/zoey-ext-workflow" }
 # Storage
 zoey-storage-vector = { path = "../crates/storage/zoey-storage-vector" }
 zoey-storage-sql = { path = "../crates/storage/zoey-storage-sql" }
+zoey-storage-mongo = { path = "../crates/storage/zoey-storage-mongo" }
+zoey-storage-supabase = { path = "../crates/storage/zoey-storage-supabase" }
 
 # External
 serenity = "0.12"
 tokio = { workspace = true }
 serde_json = { workspace = true }
+tracing = { workspace = true }
 dotenvy = "0.15"
 clap = { version = "4", features = ["derive", "env"] }
 
