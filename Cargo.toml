@@ -9,6 +9,7 @@ members = [
     # Providers (all consumer)
     "crates/providers/zoey-provider-anthropic",
     "crates/providers/zoey-provider-openai",
+    "crates/providers/zoey-provider-redpill",
     "crates/providers/zoey-provider-local",
     "crates/providers/zoey-provider-voice",
     "crates/providers/zoey-provider-router",
