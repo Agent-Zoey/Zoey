@@ -6,7 +6,7 @@ license = "MIT"
 description = "Local vector database plugin for ZoeyAI — no PostgreSQL required"
 
 [dependencies]
-zoey-core = { path = "../../core/zoey-core" }
+zoey-core = { version = "0.1.0", path = "../../core/zoey-core" }
 async-trait = "0.1"
 tokio = { version = "1.40", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }

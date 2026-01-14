@@ -196,6 +196,65 @@ let opts = RuntimeOpts {
 
 ---
 
+## Storage Adapters
+
+`zoey-core` defines the `IDatabaseAdapter` trait. Choose your storage backend:
+
+| Crate | Backend | Best For |
+|-------|---------|----------|
+| [`zoey-storage-sql`](https://crates.io/crates/zoey-storage-sql) | SQLite, PostgreSQL | Most deployments |
+| [`zoey-storage-mongo`](https://crates.io/crates/zoey-storage-mongo) | MongoDB | Document-based storage |
+| [`zoey-storage-supabase`](https://crates.io/crates/zoey-storage-supabase) | Supabase | Serverless PostgreSQL |
+| [`zoey-storage-vector`](https://crates.io/crates/zoey-storage-vector) | Local | Dedicated vector search |
+
+```toml
+[dependencies]
+zoey-core = "0.1"
+zoey-storage-sql = "0.1"  # Pick your backend
+```
+
+```rust
+use zoey_core::{AgentRuntime, RuntimeOpts, IDatabaseAdapter};
+use zoey_storage_sql::SqliteAdapter;
+use std::sync::Arc;
+
+let mut adapter = SqliteAdapter::new(":memory:");
+adapter.init().await?;
+
+let opts = RuntimeOpts::default()
+    .with_adapter(Arc::new(adapter));
+```
+
+---
+
+## Ecosystem
+
+### Providers
+| Crate | Description |
+|-------|-------------|
+| `zoey-provider-openai` | OpenAI GPT models |
+| `zoey-provider-anthropic` | Claude models |
+| `zoey-provider-local` | Ollama, llama.cpp (no API key!) |
+| `zoey-provider-voice` | TTS/STT capabilities |
+
+### Plugins
+| Crate | Description |
+|-------|-------------|
+| `zoey-plugin-bootstrap` | Essential actions and providers |
+| `zoey-plugin-memory` | Conversation memory |
+| `zoey-plugin-knowledge` | Document ingestion and RAG |
+| `zoey-plugin-search` | Web search integration |
+
+### Adaptors
+| Crate | Description |
+|-------|-------------|
+| `zoey-adaptor-discord` | Discord bot |
+| `zoey-adaptor-telegram` | Telegram bot |
+| `zoey-adaptor-web` | Web UI |
+| `zoey-adaptor-terminal` | CLI interface |
+
+---
+
 ## Dependencies
 
 This crate has minimal external dependencies:

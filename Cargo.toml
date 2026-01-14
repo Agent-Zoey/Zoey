@@ -9,6 +9,7 @@ members = [
     # Providers (all consumer)
     "crates/providers/zoey-provider-anthropic",
     "crates/providers/zoey-provider-openai",
+    "crates/providers/zoey-provider-redpill",
     "crates/providers/zoey-provider-local",
     "crates/providers/zoey-provider-voice",
     "crates/providers/zoey-provider-router",
@@ -48,7 +49,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 license = "MIT"
 authors = ["ZoeyOS Contributors"]
