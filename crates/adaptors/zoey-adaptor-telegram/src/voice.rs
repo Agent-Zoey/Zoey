@@ -378,6 +378,33 @@ impl VoiceManager {
     fn create_tts_plugin(config: &VoiceConfig) -> VoicePlugin {
         match config.engine.as_str() {
             "elevenlabs" => VoicePlugin::with_elevenlabs(None),
+            "piper" => {
+                // Piper TTS - ultra low latency (~50ms)
+                let endpoint = config
+                    .local_endpoint
+                    .clone()
+                    .unwrap_or_else(|| "http://localhost:5500".to_string());
+                VoicePlugin::with_piper(&endpoint)
+            }
+            "supertonic" => {
+                // Supertonic TTS - Ultra-fast on-device TTS (~10-50ms latency)
+                let endpoint = config
+                    .local_endpoint
+                    .clone()
+                    .unwrap_or_else(|| "http://localhost:5080".to_string());
+                VoicePlugin::with_supertonic(&endpoint)
+            }
+            "pocket_tts" | "pocket-tts" | "pockettts" => {
+                // Pocket TTS - Lightweight CPU-based TTS by Kyutai Labs (~200ms latency)
+                // 100M parameters, ~6x real-time synthesis, no GPU required
+                // Run: pip install pocket-tts && pocket-tts serve
+                let endpoint = config
+                    .local_endpoint
+                    .clone()
+                    .unwrap_or_else(|| "http://localhost:8000".to_string());
+                info!(engine = "pocket_tts", endpoint = %endpoint, "Using Pocket TTS");
+                VoicePlugin::with_pocket_tts(&endpoint)
+            }
             "local" => {
                 let endpoint = config
                     .local_endpoint

@@ -27,6 +27,9 @@ Cargo.lock
 *.sqlite3
 .venv
 .venv/*
+.venv-voice
+.venv-voice/*
+ecosystem.config.js
 
 # Local data directories (keep structure with .gitkeep)
 .zoey/**

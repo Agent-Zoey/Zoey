@@ -335,6 +335,120 @@ impl VoicePlugin {
         )
     }
 
+    /// Create with Pocket TTS engine (lightweight CPU-based TTS by Kyutai Labs)
+    /// 
+    /// Pocket TTS is a fast, lightweight TTS system that runs entirely on CPU.
+    /// It achieves ~200ms latency for the first audio chunk and ~6x real-time
+    /// synthesis speed with only 100M parameters.
+    /// 
+    /// ## Setup
+    /// ```bash
+    /// pip install pocket-tts
+    /// pocket-tts serve  # Runs on http://localhost:8000
+    /// ```
+    /// 
+    /// ## Example
+    /// ```rust,ignore
+    /// let plugin = VoicePlugin::with_pocket_tts("http://localhost:8000");
+    /// let audio = plugin.synthesize("Hello!").await?;
+    /// ```
+    /// 
+    /// ## References
+    /// - GitHub: https://github.com/kyutai-labs/pocket-tts
+    pub fn with_pocket_tts(endpoint: &str) -> Self {
+        let engine = engines::pocket_tts::PocketTTSEngine::new(endpoint);
+        Self::new(
+            Box::new(engine),
+            VoiceConfig {
+                engine_type: VoiceEngineType::Local,
+                voice: Voice::custom(
+                    "alba".to_string(),
+                    "Alba".to_string(),
+                    VoiceGender::Female,
+                    "en".to_string(),
+                ),
+                sample_rate: 24000,
+                output_format: AudioFormat::Wav,
+                endpoint: Some(endpoint.to_string()),
+                ..Default::default()
+            },
+        )
+    }
+
+    /// Create with Pocket TTS engine with a specific voice
+    /// 
+    /// Available voices: alba, marius, javert, jean, fantine, cosette, eponine, azelma
+    /// 
+    /// ## Example
+    /// ```rust,ignore
+    /// let plugin = VoicePlugin::with_pocket_tts_voice("http://localhost:8000", "marius");
+    /// let audio = plugin.synthesize("Hello!").await?;
+    /// ```
+    pub fn with_pocket_tts_voice(endpoint: &str, voice_name: &str) -> Self {
+        let engine = engines::pocket_tts::PocketTTSEngine::new(endpoint)
+            .with_voice_name(voice_name);
+        let gender = if voice_name == "marius" || voice_name == "javert" || voice_name == "jean" {
+            VoiceGender::Male
+        } else {
+            VoiceGender::Female
+        };
+        Self::new(
+            Box::new(engine),
+            VoiceConfig {
+                engine_type: VoiceEngineType::Local,
+                voice: Voice::custom(
+                    voice_name.to_string(),
+                    voice_name.to_string(),
+                    gender,
+                    "en".to_string(),
+                ),
+                sample_rate: 24000,
+                output_format: AudioFormat::Wav,
+                endpoint: Some(endpoint.to_string()),
+                ..Default::default()
+            },
+        )
+    }
+
+    /// Create with Pocket TTS engine with voice cloning
+    /// 
+    /// Provide a WAV file path or HuggingFace URL for voice cloning.
+    /// 
+    /// ## Example
+    /// ```rust,ignore
+    /// // Clone from HuggingFace voice sample
+    /// let plugin = VoicePlugin::with_pocket_tts_clone(
+    ///     "http://localhost:8000",
+    ///     "hf://kyutai/tts-voices/alba-mackenna/casual.wav",
+    /// );
+    /// 
+    /// // Clone from local file
+    /// let plugin = VoicePlugin::with_pocket_tts_clone(
+    ///     "http://localhost:8000",
+    ///     "/path/to/voice.wav",
+    /// );
+    /// ```
+    pub fn with_pocket_tts_clone(endpoint: &str, voice_path: &str) -> Self {
+        let engine = engines::pocket_tts::PocketTTSEngine::new(endpoint)
+            .with_voice_prompt(voice_path);
+        Self::new(
+            Box::new(engine),
+            VoiceConfig {
+                engine_type: VoiceEngineType::Local,
+                voice: Voice::custom(
+                    voice_path.to_string(),
+                    "Custom Voice".to_string(),
+                    VoiceGender::Neutral,
+                    "en".to_string(),
+                ),
+                sample_rate: 24000,
+                output_format: AudioFormat::Wav,
+                endpoint: Some(endpoint.to_string()),
+                ..Default::default()
+            },
+        )
+    }
+
     /// Create with Unmute engine for both STT and TTS (premium, GPU)
     /// 
     /// Connects to an existing Unmute instance at the given endpoint.

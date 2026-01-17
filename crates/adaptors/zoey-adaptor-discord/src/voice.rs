@@ -1245,6 +1245,18 @@ impl VoiceManager {
                 info!(guild_id = %guild_id, endpoint = %endpoint, "Using Supertonic TTS");
                 VoicePlugin::with_supertonic(&endpoint)
             }
+            "pocket_tts" | "pocket-tts" | "pockettts" => {
+                // Pocket TTS - Lightweight CPU-based TTS by Kyutai Labs (~200ms latency)
+                // 100M parameters, ~6x real-time synthesis, no GPU required
+                // Run: pip install pocket-tts && pocket-tts serve
+                let endpoint = self
+                    .config
+                    .local_endpoint
+                    .clone()
+                    .unwrap_or_else(|| "http://localhost:8000".to_string());
+                info!(guild_id = %guild_id, endpoint = %endpoint, "Using Pocket TTS");
+                VoicePlugin::with_pocket_tts(&endpoint)
+            }
             #[cfg(feature = "voice-moshi")]
             "moshi" => {
                 // Moshi TTS - Full-duplex real-time voice model (~200ms latency)

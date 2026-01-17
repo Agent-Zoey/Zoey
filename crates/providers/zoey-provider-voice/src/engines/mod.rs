@@ -5,6 +5,8 @@ pub mod elevenlabs;
 pub mod local;
 pub mod openai;
 pub mod piper;
+pub mod pocket_tts;
+pub mod pocket_tts_server;
 pub mod supertonic;
 
 // STT engines
@@ -42,6 +44,16 @@ pub use supertonic::{
     SupertonicEngine, SupertonicVoice, SupertonicParams,
     LocalSupertonicEngine, LocalSupertonicConfig, SupertonicPreset,
     SupertonicServer, SupertonicServerConfig, start_supertonic_server,
+};
+pub use pocket_tts::{
+    PocketTTSEngine, PocketTTSVoice,
+    print_setup_instructions as print_pocket_tts_setup,
+};
+pub use pocket_tts_server::{
+    PocketTTSServer, PocketTTSServerBuilder, PocketTTSServerConfig,
+    PocketTTSInstallMethod, AutoStartPocketTTS,
+    start_pocket_tts_server, start_pocket_tts_server_on_port, start_pocket_tts_server_uvx,
+    is_pocket_tts_installed, is_uvx_available, install_pocket_tts, install_pocket_tts_uv,
 };
 
 // STT exports
