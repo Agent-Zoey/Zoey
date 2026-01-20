@@ -906,6 +906,105 @@ pub async fn health_check(State(state): State<ServerState>) -> Json<HealthRespon
     })
 }
 
+/// List available model providers
+///
+/// Returns the list of registered providers (those with valid API keys)
+/// and the currently selected provider.
+pub async fn providers_list_handler(
+    State(server_state): State<ServerState>,
+) -> impl IntoResponse {
+    let rt = server_state.api_state.runtime.read().unwrap();
+    
+    // Get registered providers (only those with valid credentials are registered)
+    let providers: Vec<String> = rt
+        .get_providers()
+        .iter()
+        .map(|p| p.name().to_string())
+        .collect();
+    
+    // Get current provider setting
+    let current = rt
+        .get_setting("model_provider")
+        .and_then(|v| v.as_str().map(|s| s.to_string()));
+    
+    info!(
+        "PROVIDERS_LIST available={:?} current={:?}",
+        providers, current
+    );
+    
+    Json(ProvidersListResponse {
+        success: true,
+        providers,
+        current,
+    })
+}
+
+/// Switch the active model provider
+///
+/// Validates that the requested provider is registered (has valid API keys)
+/// before allowing the switch. Provider names are matched case-insensitively.
+pub async fn provider_switch_handler(
+    State(server_state): State<ServerState>,
+    Json(request): Json<ProviderSwitchRequest>,
+) -> impl IntoResponse {
+    // Get available providers
+    let available: Vec<String> = {
+        let rt = server_state.api_state.runtime.read().unwrap();
+        rt.get_providers()
+            .iter()
+            .map(|p| p.name().to_string())
+            .collect()
+    };
+    
+    // Find matching provider (case-insensitive)
+    let matched = available.iter().find(|p| {
+        p.eq_ignore_ascii_case(&request.provider)
+    });
+    
+    if let Some(provider_name) = matched {
+        // Update the runtime setting
+        {
+            let mut rt = server_state.api_state.runtime.write().unwrap();
+            rt.set_setting(
+                "model_provider",
+                serde_json::json!(provider_name),
+                false,
+            );
+            // Also update MODEL_PROVIDER for consistency
+            rt.set_setting(
+                "MODEL_PROVIDER",
+                serde_json::json!(provider_name),
+                false,
+            );
+        }
+        
+        info!(
+            "PROVIDER_SWITCH success provider={}",
+            provider_name
+        );
+        
+        Json(ProviderSwitchResponse {
+            success: true,
+            provider: Some(provider_name.clone()),
+            error: None,
+        })
+    } else {
+        warn!(
+            "PROVIDER_SWITCH failed provider={} available={:?}",
+            request.provider, available
+        );
+        
+        Json(ProviderSwitchResponse {
+            success: false,
+            provider: None,
+            error: Some(format!(
+                "Provider '{}' not available. Available providers: {:?}",
+                request.provider, available
+            )),
+        })
+    }
+}
+
 /// Chat handler - send message to agent using async task pattern
 pub async fn chat_handler(
     State(server_state): State<ServerState>,

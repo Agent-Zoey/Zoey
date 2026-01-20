@@ -176,9 +176,20 @@
         <!-- Voice/TTS Engine Configuration -->
         <enabled>true</enabled>
         
-        <!-- ===== MOSHI: Full-duplex real-time voice (~200ms latency) ===== -->
-        <!-- Kyutai Moshi model with Mimi neural audio codec -->
-        <!-- Provides both STT and TTS in a single full-duplex connection -->
+        <!-- ===== POCKET TTS: Lightweight CPU-based TTS (~200ms latency) ===== -->
+        <!-- Kyutai Labs Pocket TTS - 100M params, ~6x real-time, no GPU required -->
+        <!-- Run: pip install pocket-tts && pocket-tts serve -->
+        <engine>pocket_tts</engine>
+        <local_endpoint>http://localhost:8000</local_endpoint>
+        <voice_id>alba</voice_id>
+        <voice_name>Alba</voice_name>
+        <voice_gender>female</voice_gender>
+        <speed>1.0</speed>
+        <output_format>wav</output_format>
+        <sample_rate>24000</sample_rate>
+        <streaming>true</streaming>
+        
+        <!-- ===== MOSHI - COMMENTED OUT =====
         <engine>moshi</engine>
         <stt_engine>moshi</stt_engine>
         <local_endpoint>localhost:8998</local_endpoint>
@@ -189,6 +200,7 @@
         <output_format>opus</output_format>
         <sample_rate>24000</sample_rate>
         <streaming>true</streaming>
+        ===== END MOSHI ===== -->
         
         <!-- ===== SUPERTONIC - COMMENTED OUT =====
         <engine>supertonic</engine>

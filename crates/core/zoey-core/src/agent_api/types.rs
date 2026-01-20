@@ -578,6 +578,49 @@ pub struct KnowledgeQueryResponse {
     pub error: Option<String>,
 }
 
+// ============================================================================
+// Provider Management Types
+// ============================================================================
+
+/// Request to switch model provider
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderSwitchRequest {
+    /// Provider name to switch to (must be a registered provider)
+    pub provider: String,
+}
+
+/// Response listing available providers
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProvidersListResponse {
+    /// Success status
+    pub success: bool,
+
+    /// List of available provider names
+    pub providers: Vec<String>,
+
+    /// Currently selected provider
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub current: Option<String>,
+}
+
+/// Response from provider switch
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderSwitchResponse {
+    /// Success status
+    pub success: bool,
+
+    /// The provider that was switched to
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
+
+    /// Error message if any
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

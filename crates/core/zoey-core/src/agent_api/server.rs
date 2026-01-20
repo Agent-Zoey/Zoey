@@ -139,6 +139,15 @@ impl AgentApiServer {
                 "/agent/character/select",
                 post(super::handlers::character_select_handler),
             )
+            // Provider management
+            .route(
+                "/agent/providers",
+                get(super::handlers::providers_list_handler),
+            )
+            .route(
+                "/agent/provider/switch",
+                post(super::handlers::provider_switch_handler),
+            )
             // Context hints management
             .route(
                 "/agent/context/add",
