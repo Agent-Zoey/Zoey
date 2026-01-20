@@ -62,11 +62,18 @@ pub enum LocalBackend {
     TextGenWebUI,
 }
 
-/// Ollama API request
+/// Ollama chat message
+#[derive(Debug, Serialize)]
+struct OllamaChatMessage {
+    role: String,
+    content: String,
+}
+
+/// Ollama API request (using /api/chat endpoint)
 #[derive(Debug, Serialize)]
 struct OllamaRequest {
     model: String,
-    prompt: String,
+    messages: Vec<OllamaChatMessage>,
     stream: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     options: Option<OllamaOptions>,
@@ -81,10 +88,18 @@ struct OllamaOptions {
     num_predict: Option<usize>,
 }
 
-/// Ollama API response
+/// Ollama chat response message
+#[derive(Debug, Deserialize)]
+struct OllamaResponseMessage {
+    #[allow(dead_code)]
+    role: String,
+    content: String,
+}
+
+/// Ollama API response (from /api/chat endpoint)
 #[derive(Debug, Deserialize)]
 struct OllamaResponse {
-    response: String,
+    message: OllamaResponseMessage,
     #[allow(dead_code)]
     done: bool,
 }
@@ -241,7 +256,10 @@ impl LocalLLMClient {
 
         let request = OllamaRequest {
             model,
-            prompt: params.prompt,
+            messages: vec![OllamaChatMessage {
+                role: "user".to_string(),
+                content: params.prompt,
+            }],
             stream: true,
             options: Some(OllamaOptions {
                 temperature: params.temperature,
@@ -249,7 +267,7 @@ impl LocalLLMClient {
             }),
         };
 
-        let url = format!("{}/api/generate", self.base_url);
+        let url = format!("{}/api/chat", self.base_url);
         let mut resp = self
             .client
             .post(&url)
@@ -294,8 +312,8 @@ impl LocalLLMClient {
                 }
                 match serde_json::from_str::<OllamaResponse>(l) {
                     Ok(obj) => {
-                        if !obj.response.is_empty() {
-                            assembled.push_str(&obj.response);
+                        if !obj.message.content.is_empty() {
+                            assembled.push_str(&obj.message.content);
                         }
                         // obj.done can be used to break, but continue to drain
                     }
