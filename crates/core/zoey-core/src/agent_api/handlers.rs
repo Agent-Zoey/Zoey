@@ -471,21 +471,23 @@ async fn run_chat_stream_job(
             let adapter = rt.adapter.read().unwrap().clone();
             (rt.agent_id, adapter)
         };
-        let recent_conversation = if let Some(ref adapter) = adapter {
-            fetch_recent_conversation(
+        // Fetch conversation history as structured messages for proper multi-turn chat format
+        // This is the key fix: instead of putting conversation as text in system prompt,
+        // we send it as actual message objects that Ollama's chat template can handle properly
+        let conversation_history = if let Some(ref adapter) = adapter {
+            fetch_conversation_messages(
                 adapter.as_ref(),
                 req_clone.room_id,
                 agent_id,
-                &{
-                    let rt = runtime.read().unwrap();
-                    rt.character.name.clone()
-                },
-                5, // Reduced from 10 to prevent context explosion
+                6, // Last 6 messages (3 turns of user/assistant)
             )
             .await
         } else {
-            String::new()
+            Vec::new()
         };
+        
+        // Legacy text format (kept empty for streaming path - we use structured messages instead)
+        let recent_conversation = String::new();
         let (character_name, character_bio, ui_tone, ui_verbosity, last, prev) = {
             let rt = runtime.read().unwrap();
             let name = rt.character.name.clone();
@@ -545,16 +547,17 @@ async fn run_chat_stream_job(
             state.set_value("KNOWLEDGE_CONTEXT", knowledge_context);
         }
 
-        // Build system context from state (character, personality, knowledge, etc.)
-        // This separates context from user message for better small model performance
+        // Build system context with ONLY identity and behavior instructions
+        // DO NOT include conversation history here - it goes in the messages array
+        // This is critical for small models to understand the task correctly
         let system_context = {
             let mut parts = Vec::new();
 
-            // Add character info
+            // Add character identity
             if let Some(char_info) = state.get_value("CHARACTER") {
                 let trimmed = char_info.trim();
                 if !trimmed.is_empty() {
-                    parts.push(trimmed.to_string());
+                    parts.push(format!("You are {}.", trimmed));
                 }
             }
 
@@ -582,7 +585,7 @@ async fn run_chat_stream_job(
                 }
             }
 
-            // Add knowledge context from documents
+            // Add knowledge context from documents (this is reference material, not conversation)
             if let Some(knowledge) = state.get_value("KNOWLEDGE_CONTEXT") {
                 let trimmed = knowledge.trim();
                 if !trimmed.is_empty() {
@@ -590,17 +593,14 @@ async fn run_chat_stream_job(
                 }
             }
 
-            // Add recent conversation for context
-            if let Some(recent) = state.get_value("RECENT_MESSAGES") {
-                let trimmed = recent.trim();
-                if !trimmed.is_empty() {
-                    parts.push(format!("Recent conversation:\n{}", trimmed));
-                }
-            }
+            // NOTE: Recent conversation is NOT added here - it's sent as separate messages
+            // This prevents small models from trying to "continue" conversation text
 
             if parts.is_empty() {
-                "You are a helpful AI assistant. Respond conversationally and naturally.".to_string()
+                "You are a helpful AI assistant. Respond naturally and directly to the user.".to_string()
             } else {
+                // Add clear instruction at the end
+                parts.push("Respond naturally and directly to the user's message.".to_string());
                 parts.join("\n\n")
             }
         };
@@ -651,12 +651,34 @@ async fn run_chat_stream_job(
             })
             .clone();
 
+        // Build messages array with proper multi-turn format:
+        // 1. System message (identity/behavior only)
+        // 2. Conversation history as actual user/assistant message objects
+        // 3. Current user message
+        // This matches OpenAI/Anthropic format and lets Ollama's chat template work correctly
+        let mut messages = vec![
+            serde_json::json!({"role": "system", "content": system_context})
+        ];
+        
+        // Add conversation history as proper message turns
+        for msg in &conversation_history {
+            messages.push(serde_json::json!({
+                "role": msg.role,
+                "content": msg.content
+            }));
+        }
+        
+        // Add current user message
+        messages.push(serde_json::json!({"role": "user", "content": user_message}));
+        
+        info!(
+            "OLLAMA_MESSAGES system_len={} history_turns={} user_len={}",
+            system_context.len(), conversation_history.len(), user_message.len()
+        );
+
         let req_body = serde_json::json!({
             "model": ollama_model,
-            "messages": [
-                {"role": "system", "content": system_context},
-                {"role": "user", "content": user_message}
-            ],
+            "messages": messages,
             "stream": true,
             "options": {
                 "temperature": 0.7,
@@ -904,8 +926,64 @@ async fn run_chat_stream_job(
     }
 }
 
+/// A single chat message for multi-turn conversations
+#[derive(Debug, Clone)]
+struct ChatMessage {
+    role: String,    // "user" or "assistant"
+    content: String,
+}
+
+/// Fetch recent conversation history from database as structured messages.
+/// Returns Vec of ChatMessage suitable for Ollama's multi-turn chat format.
+/// Fetches up to `limit` messages, sorted by creation time (oldest first).
+async fn fetch_conversation_messages(
+    adapter: &dyn IDatabaseAdapter,
+    room_id: Uuid,
+    agent_id: Uuid,
+    limit: usize,
+) -> Vec<ChatMessage> {
+    let query = MemoryQuery {
+        room_id: Some(room_id),
+        table_name: "messages".to_string(),
+        count: Some(limit),
+        ..Default::default()
+    };
+
+    match adapter.get_memories(query).await {
+        Ok(mut memories) => {
+            if memories.is_empty() {
+                return Vec::new();
+            }
+
+            // Sort by created_at ascending (oldest first) for natural conversation flow
+            memories.sort_by_key(|m| m.created_at);
+
+            // Convert to ChatMessage structs with proper roles
+            memories
+                .iter()
+                .map(|m| {
+                    // If entity_id == agent_id, it's an assistant message
+                    let role = if m.entity_id == agent_id {
+                        "assistant".to_string()
+                    } else {
+                        "user".to_string()
+                    };
+                    ChatMessage {
+                        role,
+                        content: m.content.text.clone(),
+                    }
+                })
+                .collect()
+        }
+        Err(e) => {
+            eprintln!("[WARN] Failed to fetch conversation messages: {}", e);
+            Vec::new()
+        }
+    }
+}
+
 /// Fetch recent conversation history from database including both user and agent messages.
-/// Returns formatted string suitable for RECENT_MESSAGES context.
+/// Returns formatted string suitable for RECENT_MESSAGES context (legacy format).
 /// Fetches up to `limit` messages, sorted by creation time (oldest first for natural reading order).
 async fn fetch_recent_conversation(
     adapter: &dyn IDatabaseAdapter,
