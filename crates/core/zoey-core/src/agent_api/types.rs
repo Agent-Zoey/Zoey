@@ -73,6 +73,10 @@ pub struct ChatRequest {
     /// Whether to stream the response
     #[serde(default)]
     pub stream: bool,
+
+    /// Optional model override for local LLM (e.g., "tinyllama:1.1b", "llama3.2")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
 }
 
 fn default_source() -> String {

@@ -532,8 +532,8 @@ async fn run_chat_stream_job(
             let base = rt.get_setting("LOCAL_LLM_ENDPOINT")
                 .and_then(|v| v.as_str().map(|s| s.to_string()))
                 .unwrap_or_else(|| std::env::var("OLLAMA_BASE_URL").unwrap_or_else(|_| "http://localhost:11434".to_string()));
-            let model = rt.get_setting("LOCAL_LLM_MODEL")
-                .and_then(|v| v.as_str().map(|s| s.to_string()))
+            let model = req_clone.model.clone()
+                .or_else(|| rt.get_setting("LOCAL_LLM_MODEL").and_then(|v| v.as_str().map(|s| s.to_string())))
                 .unwrap_or_else(|| std::env::var("OLLAMA_MODEL").unwrap_or_else(|_| "llama3.2".to_string()));
             let max = rt.get_setting("LOCAL_LLM_MAX_TOKENS")
                 .and_then(|v| v.as_u64().map(|u| u as usize))
