@@ -594,7 +594,7 @@ async fn run_chat_stream_job(
 
         let req_body = serde_json::json!({
             "model": ollama_model,
-            "prompt": prompt,
+            "messages": [{"role": "user", "content": prompt}],
             "stream": true,
             "options": {
                 "temperature": 0.7,
@@ -611,7 +611,7 @@ async fn run_chat_stream_job(
         let resp = tokio::time::timeout(
             Duration::from_secs(stream_timeout),
             client
-                .post(format!("{}/api/generate", ollama_base))
+                .post(format!("{}/api/chat", ollama_base))
                 .json(&req_body)
                 .send(),
         )
@@ -681,15 +681,15 @@ async fn run_chat_stream_job(
                             continue;
                         }
                         if let Ok(json) = serde_json::from_str::<JsonValue>(l) {
-                            if let Some(response) = json.get("response").and_then(|v| v.as_str()) {
+                            if let Some(content) = json.get("message").and_then(|m| m.get("content")).and_then(|v| v.as_str()) {
                                 chunks_received += 1;
                                 if chunks_received == 1 {
-                                    info!("OLLAMA_FIRST_CHUNK received, len={}", response.len());
+                                    info!("OLLAMA_FIRST_CHUNK received, len={}", content.len());
                                 }
                                 let _ = stream_handler
-                                    .send_chunk(response.to_string(), false)
+                                    .send_chunk(content.to_string(), false)
                                     .await;
-                                full_text.push_str(response);
+                                full_text.push_str(content);
                             }
                             // Check if done
                             if json.get("done").and_then(|v| v.as_bool()).unwrap_or(false) {

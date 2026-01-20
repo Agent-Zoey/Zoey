@@ -1130,7 +1130,7 @@ impl MessageProcessor {
         };
         let ollama_request = serde_json::json!({
             "model": model_name,
-            "prompt": prompt,
+            "messages": [{"role": "user", "content": prompt}],
             "stream": false,
             "options": {
                 "temperature": 0.7,
@@ -1142,7 +1142,7 @@ impl MessageProcessor {
 
         // Use a short timeout (5 seconds) to avoid hanging when Ollama is not available
         match client
-            .post(format!("{}/api/generate", model_endpoint))
+            .post(format!("{}/api/chat", model_endpoint))
             .json(&ollama_request)
             .timeout(std::time::Duration::from_secs(5))
             .send()
@@ -1150,7 +1150,7 @@ impl MessageProcessor {
         {
             Ok(response) => {
                 if let Ok(json) = response.json::<serde_json::Value>().await {
-                    if let Some(text) = json["response"].as_str() {
+                    if let Some(text) = json["message"]["content"].as_str() {
                         return Ok(text.to_string());
                     }
                 }
