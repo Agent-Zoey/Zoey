@@ -545,19 +545,78 @@ async fn run_chat_stream_job(
             state.set_value("KNOWLEDGE_CONTEXT", knowledge_context);
         }
 
-        let template = crate::templates::MESSAGE_HANDLER_TEMPLATE;
-        let prompt = crate::templates::compose_prompt_from_state(&state, template)
-            .unwrap_or_else(|_| req_clone.text.clone());
+        // Build system context from state (character, personality, knowledge, etc.)
+        // This separates context from user message for better small model performance
+        let system_context = {
+            let mut parts = Vec::new();
+
+            // Add character info
+            if let Some(char_info) = state.get_value("CHARACTER") {
+                let trimmed = char_info.trim();
+                if !trimmed.is_empty() {
+                    parts.push(trimmed.to_string());
+                }
+            }
+
+            // Add soul/personality state
+            if let Some(soul) = state.get_value("SOUL_STATE") {
+                let trimmed = soul.trim();
+                if !trimmed.is_empty() {
+                    parts.push(trimmed.to_string());
+                }
+            }
+
+            // Add emotional state
+            if let Some(emotion) = state.get_value("EMOTION") {
+                let trimmed = emotion.trim();
+                if !trimmed.is_empty() {
+                    parts.push(format!("Current emotional state: {}", trimmed));
+                }
+            }
+
+            // Add UI tone if set
+            if let Some(tone) = state.get_value("UI_TONE") {
+                let trimmed = tone.trim();
+                if !trimmed.is_empty() {
+                    parts.push(format!("Respond with a {} tone.", trimmed));
+                }
+            }
+
+            // Add knowledge context from documents
+            if let Some(knowledge) = state.get_value("KNOWLEDGE_CONTEXT") {
+                let trimmed = knowledge.trim();
+                if !trimmed.is_empty() {
+                    parts.push(format!("Relevant knowledge:\n{}", trimmed));
+                }
+            }
+
+            // Add recent conversation for context
+            if let Some(recent) = state.get_value("RECENT_MESSAGES") {
+                let trimmed = recent.trim();
+                if !trimmed.is_empty() {
+                    parts.push(format!("Recent conversation:\n{}", trimmed));
+                }
+            }
+
+            if parts.is_empty() {
+                "You are a helpful AI assistant. Respond conversationally and naturally.".to_string()
+            } else {
+                parts.join("\n\n")
+            }
+        };
+
+        // User message is JUST the user's actual text
+        let user_message = req_clone.text.clone();
 
         // Store user's text only (not full prompt) to avoid context explosion
         {
             let mut rt = runtime.write().unwrap();
-            rt.set_setting("ui:lastPrompt", serde_json::json!(req_clone.text.clone()), false);
+            rt.set_setting("ui:lastPrompt", serde_json::json!(user_message.clone()), false);
             let last_key = format!("ui:lastPrompt:{}:prev", req_clone.room_id);
             if let Some(old_last) = rt.get_setting(&format!("ui:lastPrompt:{}:last", req_clone.room_id)) {
                 rt.set_setting(&last_key, old_last, false);
             }
-            rt.set_setting(&format!("ui:lastPrompt:{}:last", req_clone.room_id), serde_json::json!(req_clone.text.clone()), false);
+            rt.set_setting(&format!("ui:lastPrompt:{}:last", req_clone.room_id), serde_json::json!(user_message.clone()), false);
         }
 
         // Get Ollama endpoint and model
@@ -576,8 +635,8 @@ async fn run_chat_stream_job(
         };
 
         info!(
-            "OLLAMA_STREAMING endpoint={} model={} prompt_len={}",
-            ollama_base, ollama_model, prompt.len()
+            "OLLAMA_STREAMING endpoint={} model={} system_len={} user_len={}",
+            ollama_base, ollama_model, system_context.len(), user_message.len()
         );
 
         static OLLAMA_CLIENT: OnceLock<HttpClient> = OnceLock::new();
@@ -594,7 +653,10 @@ async fn run_chat_stream_job(
 
         let req_body = serde_json::json!({
             "model": ollama_model,
-            "messages": [{"role": "user", "content": prompt}],
+            "messages": [
+                {"role": "system", "content": system_context},
+                {"role": "user", "content": user_message}
+            ],
             "stream": true,
             "options": {
                 "temperature": 0.7,
@@ -756,7 +818,7 @@ async fn run_chat_stream_job(
                                 // Track cost if tracker available
                                 if let Some(tracker) = get_global_cost_tracker() {
                                     let latency_ms = stream_start.elapsed().as_millis() as u64;
-                                    let prompt_tokens = TokenCounter::estimate_tokens(&prompt);
+                                    let prompt_tokens = TokenCounter::estimate_tokens(&user_message);
                                     let completion_tokens = TokenCounter::estimate_tokens(&full_text);
                                     let context = LLMCallContext {
                                         agent_id,
