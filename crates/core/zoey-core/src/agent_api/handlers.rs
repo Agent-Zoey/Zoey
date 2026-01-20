@@ -525,17 +525,58 @@ async fn run_chat_stream_job(
         }
         state.set_value("ENTITY_NAME", "User");
         state.set_value("MESSAGE_TEXT", req_clone.text.clone());
-        let recent = if !recent_conversation.is_empty() {
-            format!("{}\nUser: {}", recent_conversation, req_clone.text)
-        } else {
-            format!(
-                "{}\n{}\nUser: {}",
-                prev.map(|p| format!("User: {}", p)).unwrap_or_default(),
-                last.map(|l| format!("User: {}", l)).unwrap_or_default(),
-                req_clone.text
-            )
+        
+        // Get Ollama endpoint and model FIRST (needed for context budget calculation)
+        let (ollama_base, ollama_model, max_tokens) = {
+            let rt = runtime.read().unwrap();
+            let base = rt.get_setting("LOCAL_LLM_ENDPOINT")
+                .and_then(|v| v.as_str().map(|s| s.to_string()))
+                .unwrap_or_else(|| std::env::var("OLLAMA_BASE_URL").unwrap_or_else(|_| "http://localhost:11434".to_string()));
+            let model = rt.get_setting("LOCAL_LLM_MODEL")
+                .and_then(|v| v.as_str().map(|s| s.to_string()))
+                .unwrap_or_else(|| std::env::var("OLLAMA_MODEL").unwrap_or_else(|_| "llama3.2".to_string()));
+            let max = rt.get_setting("LOCAL_LLM_MAX_TOKENS")
+                .and_then(|v| v.as_u64().map(|u| u as usize))
+                .unwrap_or(800);
+            (base, model, max)
         };
-        state.set_value("RECENT_MESSAGES", recent);
+        
+        // Run providers to dynamically enrich state (like OpenAI path does)
+        // This enables Zoey's context providers to contribute relevant information
+        let message = crate::types::Memory {
+            id: uuid::Uuid::new_v4(),
+            entity_id,
+            agent_id,
+            room_id: req_clone.room_id,
+            content: crate::types::Content {
+                text: req_clone.text.clone(),
+                ..Default::default()
+            },
+            embedding: None,
+            metadata: None,
+            created_at: chrono::Utc::now().timestamp(),
+            unique: None,
+            similarity: None,
+        };
+        let providers = runtime.read().unwrap().providers.read().unwrap().clone();
+        let runtime_ref: std::sync::Arc<dyn std::any::Any + Send + Sync> = std::sync::Arc::new(());
+        for provider in &providers {
+            // Skip heavy providers that would slow down streaming
+            let name = provider.name().to_lowercase();
+            if name.contains("planner") || name.contains("recall") || name.contains("heavy") {
+                continue;
+            }
+            if let Ok(result) = provider.get(runtime_ref.clone(), &message, &state).await {
+                if let Some(text) = result.text {
+                    state.set_value(provider.name().to_uppercase(), text);
+                }
+                if let Some(values) = result.values {
+                    for (k, v) in values {
+                        state.set_value(k, v);
+                    }
+                }
+            }
+        }
 
         // Inject relevant knowledge context from uploaded documents
         if let Some(knowledge_context) = retrieve_knowledge_context(req_clone.room_id, &req_clone.text, 5) {
@@ -547,62 +588,72 @@ async fn run_chat_stream_job(
             state.set_value("KNOWLEDGE_CONTEXT", knowledge_context);
         }
 
-        // Build system context with ONLY identity and behavior instructions
-        // DO NOT include conversation history here - it goes in the messages array
-        // This is critical for small models to understand the task correctly
+        // Get model's context window for budget calculation
+        // Small models like TinyLlama have ~2048 tokens, we need to be conservative
+        let model_context_window = {
+            let calc = CostCalculator::new();
+            // Try to get pricing for the model, fallback to conservative estimate
+            calc.get_pricing(&ollama_model)
+                .map(|p| p.context_window)
+                .unwrap_or(2048) // Conservative default for small models
+        };
+        
+        // Budget: Reserve tokens for output and safety margin
+        let output_reserve = max_tokens.min(model_context_window / 4);
+        let safety_margin = 100;
+        let available_input_tokens = model_context_window.saturating_sub(output_reserve + safety_margin);
+        
+        // Build system context dynamically based on available budget
+        // Priority: identity > tone > knowledge (truncated if needed)
         let system_context = {
+            use crate::planner::tokens::TokenCounter;
             let mut parts = Vec::new();
-
-            // Add character identity
-            if let Some(char_info) = state.get_value("CHARACTER") {
-                let trimmed = char_info.trim();
-                if !trimmed.is_empty() {
-                    parts.push(format!("You are {}.", trimmed));
-                }
-            }
-
-            // Add soul/personality state
-            if let Some(soul) = state.get_value("SOUL_STATE") {
-                let trimmed = soul.trim();
-                if !trimmed.is_empty() {
-                    parts.push(trimmed.to_string());
-                }
-            }
-
-            // Add emotional state
-            if let Some(emotion) = state.get_value("EMOTION") {
-                let trimmed = emotion.trim();
-                if !trimmed.is_empty() {
-                    parts.push(format!("Current emotional state: {}", trimmed));
-                }
-            }
-
-            // Add UI tone if set
+            let mut used_tokens = 0usize;
+            
+            // 1. Character identity (REQUIRED, but keep it minimal)
+            let identity = format!("You are {}, an AI assistant.", character_name);
+            used_tokens += TokenCounter::estimate_tokens(&identity);
+            parts.push(identity);
+            
+            // 2. Tone (small, always include)
             if let Some(tone) = state.get_value("UI_TONE") {
                 let trimmed = tone.trim();
                 if !trimmed.is_empty() {
-                    parts.push(format!("Respond with a {} tone.", trimmed));
+                    let tone_text = format!("Be {} in your responses.", trimmed);
+                    used_tokens += TokenCounter::estimate_tokens(&tone_text);
+                    parts.push(tone_text);
                 }
             }
-
-            // Add knowledge context from documents (this is reference material, not conversation)
+            
+            // 3. Knowledge context (include if budget allows, truncate if needed)
             if let Some(knowledge) = state.get_value("KNOWLEDGE_CONTEXT") {
                 let trimmed = knowledge.trim();
                 if !trimmed.is_empty() {
-                    parts.push(format!("Relevant knowledge:\n{}", trimmed));
+                    let knowledge_tokens = TokenCounter::estimate_tokens(trimmed);
+                    let remaining = available_input_tokens.saturating_sub(used_tokens + 50); // 50 for instructions
+                    
+                    if knowledge_tokens <= remaining {
+                        parts.push(format!("Relevant info: {}", trimmed));
+                        used_tokens += knowledge_tokens;
+                    } else if remaining > 100 {
+                        // Truncate knowledge to fit
+                        let chars_to_keep = (remaining * 4).min(trimmed.len());
+                        let truncated = &trimmed[..chars_to_keep.min(trimmed.len())];
+                        parts.push(format!("Relevant info: {}...", truncated));
+                        used_tokens += remaining;
+                    }
                 }
             }
-
-            // NOTE: Recent conversation is NOT added here - it's sent as separate messages
-            // This prevents small models from trying to "continue" conversation text
-
-            if parts.is_empty() {
-                "You are a helpful AI assistant. Respond naturally and directly to the user.".to_string()
-            } else {
-                // Add clear instruction at the end
-                parts.push("Respond naturally and directly to the user's message.".to_string());
-                parts.join("\n\n")
-            }
+            
+            // 4. Clear behavioral instruction (REQUIRED)
+            parts.push("Respond naturally and briefly. Do not write emails, letters, or roleplay.".to_string());
+            
+            info!(
+                "LOCAL_LLM_CONTEXT_BUDGET model={} context_window={} available={} used={}",
+                ollama_model, model_context_window, available_input_tokens, used_tokens
+            );
+            
+            parts.join("\n")
         };
 
         // User message is JUST the user's actual text
@@ -618,21 +669,6 @@ async fn run_chat_stream_job(
             }
             rt.set_setting(&format!("ui:lastPrompt:{}:last", req_clone.room_id), serde_json::json!(user_message.clone()), false);
         }
-
-        // Get Ollama endpoint and model
-        let (ollama_base, ollama_model, max_tokens) = {
-            let rt = runtime.read().unwrap();
-            let base = rt.get_setting("LOCAL_LLM_ENDPOINT")
-                .and_then(|v| v.as_str().map(|s| s.to_string()))
-                .unwrap_or_else(|| std::env::var("OLLAMA_BASE_URL").unwrap_or_else(|_| "http://localhost:11434".to_string()));
-            let model = rt.get_setting("LOCAL_LLM_MODEL")
-                .and_then(|v| v.as_str().map(|s| s.to_string()))
-                .unwrap_or_else(|| std::env::var("OLLAMA_MODEL").unwrap_or_else(|_| "llama3.2".to_string()));
-            let max = rt.get_setting("LOCAL_LLM_MAX_TOKENS")
-                .and_then(|v| v.as_u64().map(|u| u as usize))
-                .unwrap_or(800);
-            (base, model, max)
-        };
 
         info!(
             "OLLAMA_STREAMING endpoint={} model={} system_len={} user_len={}",
