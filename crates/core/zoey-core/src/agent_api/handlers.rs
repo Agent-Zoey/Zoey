@@ -908,19 +908,25 @@ pub async fn health_check(State(state): State<ServerState>) -> Json<HealthRespon
 
 /// List available model providers
 ///
-/// Returns the list of registered providers (those with valid API keys)
-/// and the currently selected provider.
+/// Returns the list of registered MODEL providers (those with valid API keys)
+/// and the currently selected provider. These are LLM providers like openai,
+/// anthropic, local-llm - not context providers.
 pub async fn providers_list_handler(
     State(server_state): State<ServerState>,
 ) -> impl IntoResponse {
     let rt = server_state.api_state.runtime.read().unwrap();
     
-    // Get registered providers (only those with valid credentials are registered)
-    let providers: Vec<String> = rt
-        .get_providers()
-        .iter()
-        .map(|p| p.name().to_string())
+    // Get registered MODEL providers from rt.models (not rt.providers which are context providers)
+    // Model providers are keyed by model type (TEXT_LARGE, etc.) - extract unique provider names
+    let models = rt.get_models();
+    let mut provider_names: Vec<String> = models
+        .values()
+        .flat_map(|handlers| handlers.iter().map(|h| h.name.clone()))
         .collect();
+    
+    // Deduplicate and sort for consistent output
+    provider_names.sort();
+    provider_names.dedup();
     
     // Get current provider setting
     let current = rt
@@ -929,12 +935,12 @@ pub async fn providers_list_handler(
     
     info!(
         "PROVIDERS_LIST available={:?} current={:?}",
-        providers, current
+        provider_names, current
     );
     
     Json(ProvidersListResponse {
         success: true,
-        providers,
+        providers: provider_names,
         current,
     })
 }
@@ -942,23 +948,31 @@ pub async fn providers_list_handler(
 /// Switch the active model provider
 ///
 /// Validates that the requested provider is registered (has valid API keys)
-/// before allowing the switch. Provider names are matched case-insensitively.
+/// before allowing the switch. Uses flexible case-insensitive matching.
 pub async fn provider_switch_handler(
     State(server_state): State<ServerState>,
     Json(request): Json<ProviderSwitchRequest>,
 ) -> impl IntoResponse {
-    // Get available providers
+    // Get available MODEL providers (from rt.models, not rt.providers)
     let available: Vec<String> = {
         let rt = server_state.api_state.runtime.read().unwrap();
-        rt.get_providers()
-            .iter()
-            .map(|p| p.name().to_string())
-            .collect()
+        let models = rt.get_models();
+        let mut names: Vec<String> = models
+            .values()
+            .flat_map(|handlers| handlers.iter().map(|h| h.name.clone()))
+            .collect();
+        names.sort();
+        names.dedup();
+        names
     };
     
-    // Find matching provider (case-insensitive)
+    // Simple case-insensitive matching - any registered provider is valid
+    let req_lc = request.provider.to_lowercase();
+    
     let matched = available.iter().find(|p| {
-        p.eq_ignore_ascii_case(&request.provider)
+        let p_lc = p.to_lowercase();
+        // Case-insensitive match or partial match
+        p_lc == req_lc || p_lc.contains(&req_lc) || req_lc.contains(&p_lc)
     });
     
     if let Some(provider_name) = matched {
@@ -979,8 +993,8 @@ pub async fn provider_switch_handler(
         }
         
         info!(
-            "PROVIDER_SWITCH success provider={}",
-            provider_name
+            "PROVIDER_SWITCH success provider={} (requested={})",
+            provider_name, request.provider
         );
         
         Json(ProviderSwitchResponse {
