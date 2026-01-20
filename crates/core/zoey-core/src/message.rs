@@ -506,7 +506,7 @@ impl MessageProcessor {
         let template_str = template_owned
             .as_deref()
             .unwrap_or(crate::templates::MESSAGE_HANDLER_TEMPLATE);
-        let mut prompt = compose_prompt_from_state(&state, template_str).unwrap_or_else(|_| {
+        let mut prompt = compose_prompt_from_state(state, template_str).unwrap_or_else(|_| {
             // Fallback template if state composition fails
             format!(
                 "You are ZoeyBot, a helpful AI assistant.\n\
