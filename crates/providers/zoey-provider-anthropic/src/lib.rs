@@ -46,10 +46,12 @@ impl AnthropicClient {
     }
 
     /// Generate text using Claude
+    /// Returns (text, usage, ttft_ms) where ttft_ms is time-to-first-token in milliseconds
     pub async fn generate_text(
         &self,
         params: GenerateTextParams,
-    ) -> Result<(String, Option<AnthropicUsage>)> {
+        start_time: std::time::Instant,
+    ) -> Result<(String, Option<AnthropicUsage>, Option<u64>)> {
         let request = AnthropicRequest {
             model: params.model.unwrap_or_else(|| {
                 std::env::var("ANTHROPIC_MODEL")
@@ -90,6 +92,7 @@ impl AnthropicClient {
         let mut total_usage: Option<AnthropicUsage> = None;
         let mut input_tokens: usize = 0;
         let mut output_tokens: usize = 0;
+        let mut ttft_ms: Option<u64> = None;
 
         while let Ok(opt) = resp.chunk().await {
             let chunk = match opt {
@@ -115,6 +118,10 @@ impl AnthropicClient {
                             "content_block_delta" => {
                                 if let Some(delta) = json.get("delta") {
                                     if let Some(text) = delta.get("text").and_then(|v| v.as_str()) {
+                                        // Record time-to-first-token on first content
+                                        if ttft_ms.is_none() && !text.is_empty() {
+                                            ttft_ms = Some(start_time.elapsed().as_millis() as u64);
+                                        }
                                         assembled.push_str(text);
                                     }
                                 }
@@ -164,7 +171,7 @@ impl AnthropicClient {
         let _rate_limit =
             zoey_core::observability::rest::extract_rate_limit_from_headers(resp.headers());
 
-        Ok((assembled, total_usage))
+        Ok((assembled, total_usage, ttft_ms))
     }
 }
 
@@ -313,9 +320,9 @@ fn create_anthropic_handler(api_key: String) -> ModelHandler {
                 api_key.clone()
             };
             let client = AnthropicClient::new(effective_api_key);
-            let (text, usage) = client.generate_text(gen_params.clone()).await?;
+            let (text, usage, ttft_ms) = client.generate_text(gen_params.clone(), start_time).await?;
 
-            // Calculate latency
+            // Calculate total latency
             let latency_ms = start_time.elapsed().as_millis() as u64;
 
             // Extract token usage and record cost
@@ -365,7 +372,7 @@ fn create_anthropic_handler(api_key: String) -> ModelHandler {
                             evaluator_name: None,
                             temperature: gen_params.temperature,
                             cached_tokens: None,
-                            ttft_ms: None,
+                            ttft_ms,
                             prompt_hash: Some(zoey_core::observability::compute_prompt_hash(
                                 &gen_params.prompt,
                             )),

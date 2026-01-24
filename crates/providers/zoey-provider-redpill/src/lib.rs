@@ -55,10 +55,12 @@ impl RedpillClient {
     }
 
     /// Generate text using RedPill (OpenAI-compatible API)
+    /// Returns (text, usage, ttft_ms) where ttft_ms is time-to-first-token in milliseconds
     pub async fn generate_text(
         &self,
         params: GenerateTextParams,
-    ) -> Result<(String, Option<RedpillUsage>)> {
+        start_time: std::time::Instant,
+    ) -> Result<(String, Option<RedpillUsage>, Option<u64>)> {
         let model = params.model.clone().unwrap_or_else(|| {
             std::env::var("REDPILL_MODEL").unwrap_or_else(|_| "x-ai/grok-4.1-fast".to_string())
         });
@@ -108,6 +110,7 @@ impl RedpillClient {
         let mut assembled = String::new();
         let mut buffer = String::new();
         let mut total_usage: Option<RedpillUsage> = None;
+        let mut ttft_ms: Option<u64> = None;
 
         while let Ok(opt) = resp.chunk().await {
             let chunk = match opt {
@@ -133,6 +136,10 @@ impl RedpillClient {
                         for choice in choices {
                             if let Some(delta) = choice.get("delta") {
                                 if let Some(content) = delta.get("content").and_then(|v| v.as_str()) {
+                                    // Record time-to-first-token on first content
+                                    if ttft_ms.is_none() && !content.is_empty() {
+                                        ttft_ms = Some(start_time.elapsed().as_millis() as u64);
+                                    }
                                     assembled.push_str(content);
                                 }
                             }
@@ -153,7 +160,7 @@ impl RedpillClient {
         let _rate_limit =
             zoey_core::observability::rest::extract_rate_limit_from_headers(resp.headers());
 
-        Ok((assembled, total_usage))
+        Ok((assembled, total_usage, ttft_ms))
     }
 }
 
@@ -310,9 +317,9 @@ fn create_redpill_handler(api_key: String) -> ModelHandler {
                 api_key.clone()
             };
             let client = RedpillClient::new(effective_api_key);
-            let (text, usage) = client.generate_text(gen_params.clone()).await?;
+            let (text, usage, ttft_ms) = client.generate_text(gen_params.clone(), start_time).await?;
 
-            // Calculate latency
+            // Calculate total latency
             let latency_ms = start_time.elapsed().as_millis() as u64;
 
             // Extract token usage and record cost
@@ -362,7 +369,7 @@ fn create_redpill_handler(api_key: String) -> ModelHandler {
                             evaluator_name: None,
                             temperature: gen_params.temperature,
                             cached_tokens: None,
-                            ttft_ms: None,
+                            ttft_ms,
                             prompt_hash: Some(zoey_core::observability::compute_prompt_hash(
                                 &gen_params.prompt,
                             )),
