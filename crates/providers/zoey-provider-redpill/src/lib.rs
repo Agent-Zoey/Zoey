@@ -63,13 +63,25 @@ impl RedpillClient {
             std::env::var("REDPILL_MODEL").unwrap_or_else(|_| "x-ai/grok-4.1-fast".to_string())
         });
 
+        // Newer models (GPT-5, O3, O4) require max_completion_tokens instead of max_tokens
+        let uses_new_token_param = model.contains("gpt-5")
+            || model.contains("o3")
+            || model.contains("o4");
+
+        let (max_tokens, max_completion_tokens) = if uses_new_token_param {
+            (None, params.max_tokens)
+        } else {
+            (params.max_tokens, None)
+        };
+
         let request = RedpillRequest {
             model,
             messages: vec![RedpillMessage {
                 role: "user".to_string(),
                 content: params.prompt,
             }],
-            max_tokens: params.max_tokens,
+            max_tokens,
+            max_completion_tokens,
             temperature: params.temperature,
             stop: params.stop,
             stream: Some(true),
@@ -79,8 +91,7 @@ impl RedpillClient {
             .client
             .post(&format!("{}/chat/completions", self.base_url))
             .header("Authorization", format!("Bearer {}", self.api_key))
-            .header("accept", "text/event-stream")
-            .header("content-type", "application/json")
+            .header("Content-Type", "application/json")
             .json(&request)
             .send()
             .await
@@ -152,6 +163,8 @@ struct RedpillRequest {
     messages: Vec<RedpillMessage>,
     #[serde(skip_serializing_if = "Option::is_none")]
     max_tokens: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_completion_tokens: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     temperature: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
