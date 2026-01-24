@@ -41,7 +41,7 @@ impl RedpillClient {
         Self {
             client: get_http_client(),
             api_key,
-            base_url: "https://api.red-pill.ai/v1".to_string(),
+            base_url: "https://api.redpill.ai/v1".to_string(),
         }
     }
 
@@ -59,10 +59,9 @@ impl RedpillClient {
         &self,
         params: GenerateTextParams,
     ) -> Result<(String, Option<RedpillUsage>)> {
-        let model = params
-            .model
-            .clone()
-            .unwrap_or_else(|| "gpt-4o".to_string());
+        let model = params.model.clone().unwrap_or_else(|| {
+            std::env::var("REDPILL_MODEL").unwrap_or_else(|_| "x-ai/grok-4.1-fast".to_string())
+        });
 
         let request = RedpillRequest {
             model,
@@ -281,10 +280,9 @@ fn create_redpill_handler(api_key: String) -> ModelHandler {
         let api_key = api_key.clone();
         Box::pin(async move {
             let gen_params = params.params.clone();
-            let model = gen_params
-                .model
-                .clone()
-                .unwrap_or_else(|| "gpt-4o".to_string());
+            let model = gen_params.model.clone().unwrap_or_else(|| {
+                std::env::var("REDPILL_MODEL").unwrap_or_else(|_| "x-ai/grok-4.1-fast".to_string())
+            });
 
             // Track start time for latency measurement
             let start_time = std::time::Instant::now();

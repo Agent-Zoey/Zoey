@@ -218,8 +218,10 @@ fn create_text_handler() -> ModelHandler {
                 OpenAIPlugin::get_client()
             };
 
-            // Determine model based on type
-            let model = gen_params.model.unwrap_or_else(|| "gpt-4".to_string());
+            // Determine model based on type - check env override first
+            let model = gen_params.model.unwrap_or_else(|| {
+                std::env::var("OPENAI_MODEL").unwrap_or_else(|_| "gpt-4o-mini".to_string())
+            });
 
             let mut request_builder = CreateChatCompletionRequestArgs::default();
             request_builder.model(model.clone());

@@ -5,7 +5,6 @@
 
 use async_trait::async_trait;
 use zoey_core::{types::*, ZoeyError, Result};
-use reqwest::header::HeaderMap;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -52,9 +51,10 @@ impl AnthropicClient {
         params: GenerateTextParams,
     ) -> Result<(String, Option<AnthropicUsage>)> {
         let request = AnthropicRequest {
-            model: params
-                .model
-                .unwrap_or_else(|| "claude-3-opus-20240229".to_string()),
+            model: params.model.unwrap_or_else(|| {
+                std::env::var("ANTHROPIC_MODEL")
+                    .unwrap_or_else(|_| "claude-3-haiku-20240307".to_string())
+            }),
             max_tokens: params.max_tokens.unwrap_or(1024),
             messages: vec![AnthropicMessage {
                 role: "user".to_string(),
@@ -87,7 +87,10 @@ impl AnthropicClient {
 
         let mut assembled = String::new();
         let mut buffer = String::new();
-        let mut last_headers: Option<HeaderMap> = None;
+        let mut total_usage: Option<AnthropicUsage> = None;
+        let mut input_tokens: usize = 0;
+        let mut output_tokens: usize = 0;
+
         while let Ok(opt) = resp.chunk().await {
             let chunk = match opt {
                 Some(c) => c,
@@ -116,6 +119,28 @@ impl AnthropicClient {
                                     }
                                 }
                             }
+                            "message_start" => {
+                                // Extract input tokens from message_start
+                                if let Some(message) = json.get("message") {
+                                    if let Some(usage) = message.get("usage") {
+                                        if let Some(it) =
+                                            usage.get("input_tokens").and_then(|v| v.as_u64())
+                                        {
+                                            input_tokens = it as usize;
+                                        }
+                                    }
+                                }
+                            }
+                            "message_delta" => {
+                                // Extract output tokens from message_delta
+                                if let Some(usage) = json.get("usage") {
+                                    if let Some(ot) =
+                                        usage.get("output_tokens").and_then(|v| v.as_u64())
+                                    {
+                                        output_tokens = ot as usize;
+                                    }
+                                }
+                            }
                             "message_stop" | "content_block_stop" => {
                                 // End of stream
                             }
@@ -127,12 +152,19 @@ impl AnthropicClient {
             buffer = tail.to_string();
         }
 
+        // Build usage if we captured tokens
+        if input_tokens > 0 || output_tokens > 0 {
+            total_usage = Some(AnthropicUsage {
+                input_tokens,
+                output_tokens,
+            });
+        }
+
         // Capture rate-limit headers
-        let rate_limit =
+        let _rate_limit =
             zoey_core::observability::rest::extract_rate_limit_from_headers(resp.headers());
-        // Integrate with runtime observability if available
-        // (caller is expected to store)
-        Ok((assembled, None))
+
+        Ok((assembled, total_usage))
     }
 }
 
@@ -263,10 +295,10 @@ fn create_anthropic_handler(api_key: String) -> ModelHandler {
         let api_key = api_key.clone();
         Box::pin(async move {
             let gen_params = params.params.clone();
-            let model = gen_params
-                .model
-                .clone()
-                .unwrap_or_else(|| "claude-3-opus-20240229".to_string());
+            let model = gen_params.model.clone().unwrap_or_else(|| {
+                std::env::var("ANTHROPIC_MODEL")
+                    .unwrap_or_else(|_| "claude-3-haiku-20240307".to_string())
+            });
 
             // Track start time for latency measurement
             let start_time = std::time::Instant::now();
