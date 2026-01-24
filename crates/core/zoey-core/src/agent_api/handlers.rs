@@ -926,6 +926,708 @@ async fn run_chat_stream_job(
         return;
     }
 
+    // Redpill fast-path streaming
+    let is_redpill = provider
+        .as_deref()
+        .map(|s| s.eq_ignore_ascii_case("redpill"))
+        .unwrap_or(false);
+    info!("REDPILL_CHECK is_redpill={} provider={:?}", is_redpill, provider);
+    if is_redpill {
+        let entity_id = req_clone.entity_id.unwrap_or_else(Uuid::new_v4);
+        let (agent_id, adapter) = {
+            let rt = runtime.read().unwrap();
+            let adapter = rt.adapter.read().unwrap().clone();
+            (rt.agent_id, adapter)
+        };
+        let recent_conversation = if let Some(ref adapter) = adapter {
+            fetch_recent_conversation(
+                adapter.as_ref(),
+                req_clone.room_id,
+                agent_id,
+                &{
+                    let rt = runtime.read().unwrap();
+                    rt.character.name.clone()
+                },
+                5,
+            )
+            .await
+        } else {
+            String::new()
+        };
+        let (character_name, character_bio, ui_tone, ui_verbosity, last, prev) = {
+            let rt = runtime.read().unwrap();
+            let name = rt.character.name.clone();
+            let bio = rt.character.bio.clone().join(" ");
+            let tone = rt
+                .get_setting("ui:tone")
+                .and_then(|v| v.as_str().map(|s| s.to_string()));
+            let verbosity = rt.get_setting("ui:verbosity").map(|v| v.to_string());
+            let last_key = format!("ui:lastPrompt:{}:last", req_clone.room_id);
+            let prev_key = format!("ui:lastPrompt:{}:prev", req_clone.room_id);
+            let last = rt
+                .get_setting(&last_key)
+                .and_then(|v| v.as_str().map(|s| s.to_string()));
+            let prev = rt
+                .get_setting(&prev_key)
+                .and_then(|v| v.as_str().map(|s| s.to_string()));
+            (name, bio, tone, verbosity, last, prev)
+        };
+        let mut state = crate::types::State::new();
+        state.set_value(
+            "CHARACTER",
+            format!("Name: {}\nBio: {}", character_name, character_bio),
+        );
+        if let Some(t) = ui_tone {
+            state.set_value("UI_TONE", t);
+        }
+        if let Some(v) = ui_verbosity {
+            state.set_value("UI_VERBOSITY", v);
+        }
+        if let Some(p) = prev.clone() {
+            state.set_value("PREV_PROMPT", p);
+        }
+        if let Some(l) = last.clone() {
+            state.set_value("LAST_PROMPT", l);
+        }
+        state.set_value("ENTITY_NAME", "User");
+        state.set_value("MESSAGE_TEXT", req_clone.text.clone());
+        let recent = if !recent_conversation.is_empty() {
+            format!("{}\nUser: {}", recent_conversation, req_clone.text)
+        } else {
+            format!(
+                "{}\n{}\nUser: {}",
+                prev.map(|p| format!("User: {}", p)).unwrap_or_default(),
+                last.map(|l| format!("User: {}", l)).unwrap_or_default(),
+                req_clone.text
+            )
+        };
+        state.set_value("RECENT_MESSAGES", recent);
+
+        // Run providers to enrich state
+        let message = crate::types::Memory {
+            id: uuid::Uuid::new_v4(),
+            entity_id,
+            agent_id,
+            room_id: req_clone.room_id,
+            content: crate::types::Content {
+                text: req_clone.text.clone(),
+                ..Default::default()
+            },
+            embedding: None,
+            metadata: None,
+            created_at: chrono::Utc::now().timestamp(),
+            unique: None,
+            similarity: None,
+        };
+        let providers = runtime.read().unwrap().providers.read().unwrap().clone();
+        let runtime_ref: std::sync::Arc<dyn std::any::Any + Send + Sync> = std::sync::Arc::new(());
+        for provider in &providers {
+            if provider.name() == "planner" || provider.name() == "intent" {
+                continue;
+            }
+            if let Ok(result) = provider.get(runtime_ref.clone(), &message, &state).await {
+                if let Some(text) = result.text {
+                    state.set_value(&format!("PROVIDER_{}", provider.name().to_uppercase()), text);
+                }
+            }
+        }
+
+        // Store user message
+        if let Some(ref adapter) = adapter {
+            let user_mem = Memory {
+                id: Uuid::new_v4(),
+                entity_id,
+                agent_id,
+                room_id: req_clone.room_id,
+                content: Content {
+                    text: req_clone.text.clone(),
+                    source: Some(req_clone.source.clone()),
+                    ..Default::default()
+                },
+                embedding: None,
+                metadata: None,
+                created_at: chrono::Utc::now().timestamp(),
+                unique: Some(false),
+                similarity: None,
+            };
+            let _ = adapter.create_memory(&user_mem, "messages").await;
+        }
+
+        // Update last prompts
+        {
+            let mut rt = runtime.write().unwrap();
+            let last_key = format!("ui:lastPrompt:{}:last", req_clone.room_id);
+            let prev_key = format!("ui:lastPrompt:{}:prev", req_clone.room_id);
+            if let Some(l) = rt.get_setting(&last_key).and_then(|v| v.as_str().map(|s| s.to_string())) {
+                rt.set_setting(&prev_key, serde_json::json!(l), false);
+            }
+            rt.set_setting(&last_key, serde_json::json!(req_clone.text.clone()), false);
+        }
+
+        // Build prompt
+        let template = crate::templates::MESSAGE_HANDLER_TEMPLATE;
+        let prompt = crate::templates::compose_prompt_from_state(&state, template)
+            .unwrap_or_else(|_| req_clone.text.clone());
+
+        // Get API key from secrets or env
+        let api_key = {
+            let rt = runtime.read().unwrap();
+            crate::secrets::get_secret(&rt.character, "REDPILL_API_KEY")
+        }
+        .or_else(|| std::env::var("REDPILL_API_KEY").ok())
+        .unwrap_or_default();
+
+        if api_key.is_empty() {
+            let _ = stream_handler
+                .send_error(ZoeyError::other("REDPILL_API_KEY not configured"))
+                .await;
+            return;
+        }
+
+        let model = std::env::var("REDPILL_MODEL").unwrap_or_else(|_| "x-ai/grok-4.1-fast".to_string());
+
+        // Check if model uses new token param
+        let uses_new_token_param = model.contains("gpt-5") || model.contains("o3") || model.contains("o4");
+        let max_tokens_field = if uses_new_token_param { "max_completion_tokens" } else { "max_tokens" };
+
+        let req_body = if uses_new_token_param {
+            serde_json::json!({
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}],
+                "max_completion_tokens": 2048,
+                "temperature": 0.7,
+                "stream": true
+            })
+        } else {
+            serde_json::json!({
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}],
+                "max_tokens": 2048,
+                "temperature": 0.7,
+                "stream": true
+            })
+        };
+
+        static REDPILL_CLIENT: OnceLock<HttpClient> = OnceLock::new();
+        let client = REDPILL_CLIENT
+            .get_or_init(|| {
+                reqwest::Client::builder()
+                    .pool_max_idle_per_host(50)
+                    .pool_idle_timeout(std::time::Duration::from_secs(300))
+                    .tcp_keepalive(std::time::Duration::from_secs(60))
+                    .timeout(std::time::Duration::from_secs(120))
+                    .build()
+                    .unwrap_or_else(|_| reqwest::Client::new())
+            })
+            .clone();
+        let stream_timeout = std::env::var("LLM_STREAM_TIMEOUT")
+            .ok()
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or(120);
+        let stream_start = Instant::now();
+        let prompt_tokens = TokenCounter::estimate_tokens(&prompt);
+        let resp = tokio::time::timeout(
+            Duration::from_secs(stream_timeout),
+            client
+                .post("https://api.redpill.ai/v1/chat/completions")
+                .bearer_auth(&api_key)
+                .header("Content-Type", "application/json")
+                .json(&req_body)
+                .send(),
+        )
+        .await;
+
+        match resp {
+            Err(_) => {
+                let _ = stream_handler
+                    .send_error(ZoeyError::other("Redpill streaming request timed out"))
+                    .await;
+            }
+            Ok(Err(e)) => {
+                let _ = stream_handler
+                    .send_error(ZoeyError::other(format!(
+                        "Redpill streaming request failed: {}",
+                        e
+                    )))
+                    .await;
+            }
+            Ok(Ok(mut r)) => {
+                if !r.status().is_success() {
+                    let error_text = r.text().await.unwrap_or_default();
+                    let _ = stream_handler
+                        .send_error(ZoeyError::other(format!(
+                            "Redpill API error: {}",
+                            error_text
+                        )))
+                        .await;
+                    return;
+                }
+
+                let mut buffer = String::new();
+                let mut full_text = String::new();
+                let mut ttft_ms: Option<u64> = None;
+                while let Ok(chunk_result) = tokio::time::timeout(
+                    Duration::from_secs(stream_timeout),
+                    r.chunk(),
+                )
+                .await
+                {
+                    let chunk = match chunk_result {
+                        Ok(opt) => match opt {
+                            Some(c) => c,
+                            None => break,
+                        },
+                        Err(e) => {
+                            let _ = stream_handler
+                                .send_error(ZoeyError::other(format!(
+                                    "Redpill streaming chunk failed: {}",
+                                    e
+                                )))
+                                .await;
+                            break;
+                        }
+                    };
+                    let s = String::from_utf8_lossy(&chunk);
+                    buffer.push_str(&s);
+                    let mut parts: Vec<&str> = buffer.split('\n').collect();
+                    let tail = parts.pop().unwrap_or("");
+                    for line in parts {
+                        let l = line.trim();
+                        if !l.starts_with("data:") {
+                            continue;
+                        }
+                        let payload = l.trim_start_matches("data:").trim();
+                        if payload == "[DONE]" {
+                            let _ = stream_handler.send_chunk(String::new(), true).await;
+                            let latency_ms = stream_start.elapsed().as_millis() as u64;
+                            let completion_tokens = TokenCounter::estimate_tokens(&full_text);
+                            // Store response
+                            if let Some(adapter) = adapter.as_ref() {
+                                let response = Memory {
+                                    id: Uuid::new_v4(),
+                                    entity_id: agent_id,
+                                    agent_id,
+                                    room_id: req_clone.room_id,
+                                    content: Content {
+                                        text: full_text.clone(),
+                                        source: Some(req_clone.source.clone()),
+                                        ..Default::default()
+                                    },
+                                    embedding: None,
+                                    metadata: None,
+                                    created_at: chrono::Utc::now().timestamp(),
+                                    unique: Some(false),
+                                    similarity: None,
+                                };
+                                let _ = adapter.create_memory(&response, "messages").await;
+                            }
+                            // Track cost
+                            if let Some(tracker) = get_global_cost_tracker() {
+                                let context = LLMCallContext {
+                                    agent_id,
+                                    user_id: req_clone.entity_id.map(|u| u.to_string()),
+                                    conversation_id: Some(req_clone.room_id),
+                                    action_name: None,
+                                    evaluator_name: None,
+                                    temperature: Some(0.7),
+                                    cached_tokens: None,
+                                    ttft_ms,
+                                    prompt_hash: None,
+                                    prompt_preview: Some(req_clone.text.chars().take(100).collect()),
+                                };
+                                let _ = tracker.record_llm_call(
+                                    "redpill",
+                                    &model,
+                                    prompt_tokens,
+                                    completion_tokens,
+                                    latency_ms,
+                                    agent_id,
+                                    context,
+                                ).await;
+                            }
+                            {
+                                let mut rt = runtime.write().unwrap();
+                                let key = format!("ui:lastAddressed:{}", req_clone.room_id);
+                                rt.set_setting(
+                                    &key,
+                                    serde_json::json!(chrono::Utc::now().timestamp()),
+                                    false,
+                                );
+                            }
+                            break;
+                        }
+                        if let Ok(json) = serde_json::from_str::<JsonValue>(payload) {
+                            if let Some(choices) = json.get("choices").and_then(|v| v.as_array()) {
+                                if let Some(delta) = choices.get(0).and_then(|c| c.get("delta")) {
+                                    if let Some(content) = delta.get("content").and_then(|v| v.as_str()) {
+                                        // Record TTFT on first content
+                                        if ttft_ms.is_none() && !content.is_empty() {
+                                            ttft_ms = Some(stream_start.elapsed().as_millis() as u64);
+                                        }
+                                        let _ = stream_handler
+                                            .send_chunk(content.to_string(), false)
+                                            .await;
+                                        full_text.push_str(content);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    buffer = tail.to_string();
+                }
+            }
+        }
+        return;
+    }
+
+    // Anthropic fast-path streaming
+    let is_anthropic = provider
+        .as_deref()
+        .map(|s| s.eq_ignore_ascii_case("anthropic"))
+        .unwrap_or(false);
+    info!("ANTHROPIC_CHECK is_anthropic={} provider={:?}", is_anthropic, provider);
+    if is_anthropic {
+        let entity_id = req_clone.entity_id.unwrap_or_else(Uuid::new_v4);
+        let (agent_id, adapter) = {
+            let rt = runtime.read().unwrap();
+            let adapter = rt.adapter.read().unwrap().clone();
+            (rt.agent_id, adapter)
+        };
+        let recent_conversation = if let Some(ref adapter) = adapter {
+            fetch_recent_conversation(
+                adapter.as_ref(),
+                req_clone.room_id,
+                agent_id,
+                &{
+                    let rt = runtime.read().unwrap();
+                    rt.character.name.clone()
+                },
+                5,
+            )
+            .await
+        } else {
+            String::new()
+        };
+        let (character_name, character_bio, ui_tone, ui_verbosity, last, prev) = {
+            let rt = runtime.read().unwrap();
+            let name = rt.character.name.clone();
+            let bio = rt.character.bio.clone().join(" ");
+            let tone = rt
+                .get_setting("ui:tone")
+                .and_then(|v| v.as_str().map(|s| s.to_string()));
+            let verbosity = rt.get_setting("ui:verbosity").map(|v| v.to_string());
+            let last_key = format!("ui:lastPrompt:{}:last", req_clone.room_id);
+            let prev_key = format!("ui:lastPrompt:{}:prev", req_clone.room_id);
+            let last = rt
+                .get_setting(&last_key)
+                .and_then(|v| v.as_str().map(|s| s.to_string()));
+            let prev = rt
+                .get_setting(&prev_key)
+                .and_then(|v| v.as_str().map(|s| s.to_string()));
+            (name, bio, tone, verbosity, last, prev)
+        };
+        let mut state = crate::types::State::new();
+        state.set_value(
+            "CHARACTER",
+            format!("Name: {}\nBio: {}", character_name, character_bio),
+        );
+        if let Some(t) = ui_tone {
+            state.set_value("UI_TONE", t);
+        }
+        if let Some(v) = ui_verbosity {
+            state.set_value("UI_VERBOSITY", v);
+        }
+        if let Some(p) = prev.clone() {
+            state.set_value("PREV_PROMPT", p);
+        }
+        if let Some(l) = last.clone() {
+            state.set_value("LAST_PROMPT", l);
+        }
+        state.set_value("ENTITY_NAME", "User");
+        state.set_value("MESSAGE_TEXT", req_clone.text.clone());
+        let recent = if !recent_conversation.is_empty() {
+            format!("{}\nUser: {}", recent_conversation, req_clone.text)
+        } else {
+            format!(
+                "{}\n{}\nUser: {}",
+                prev.map(|p| format!("User: {}", p)).unwrap_or_default(),
+                last.map(|l| format!("User: {}", l)).unwrap_or_default(),
+                req_clone.text
+            )
+        };
+        state.set_value("RECENT_MESSAGES", recent);
+
+        // Run providers to enrich state
+        let message = crate::types::Memory {
+            id: uuid::Uuid::new_v4(),
+            entity_id,
+            agent_id,
+            room_id: req_clone.room_id,
+            content: crate::types::Content {
+                text: req_clone.text.clone(),
+                ..Default::default()
+            },
+            embedding: None,
+            metadata: None,
+            created_at: chrono::Utc::now().timestamp(),
+            unique: None,
+            similarity: None,
+        };
+        let providers = runtime.read().unwrap().providers.read().unwrap().clone();
+        let runtime_ref: std::sync::Arc<dyn std::any::Any + Send + Sync> = std::sync::Arc::new(());
+        for provider in &providers {
+            if provider.name() == "planner" || provider.name() == "intent" {
+                continue;
+            }
+            if let Ok(result) = provider.get(runtime_ref.clone(), &message, &state).await {
+                if let Some(text) = result.text {
+                    state.set_value(&format!("PROVIDER_{}", provider.name().to_uppercase()), text);
+                }
+            }
+        }
+
+        // Store user message
+        if let Some(ref adapter) = adapter {
+            let user_mem = Memory {
+                id: Uuid::new_v4(),
+                entity_id,
+                agent_id,
+                room_id: req_clone.room_id,
+                content: Content {
+                    text: req_clone.text.clone(),
+                    source: Some(req_clone.source.clone()),
+                    ..Default::default()
+                },
+                embedding: None,
+                metadata: None,
+                created_at: chrono::Utc::now().timestamp(),
+                unique: Some(false),
+                similarity: None,
+            };
+            let _ = adapter.create_memory(&user_mem, "messages").await;
+        }
+
+        // Update last prompts
+        {
+            let mut rt = runtime.write().unwrap();
+            let last_key = format!("ui:lastPrompt:{}:last", req_clone.room_id);
+            let prev_key = format!("ui:lastPrompt:{}:prev", req_clone.room_id);
+            if let Some(l) = rt.get_setting(&last_key).and_then(|v| v.as_str().map(|s| s.to_string())) {
+                rt.set_setting(&prev_key, serde_json::json!(l), false);
+            }
+            rt.set_setting(&last_key, serde_json::json!(req_clone.text.clone()), false);
+        }
+
+        // Build prompt
+        let template = crate::templates::MESSAGE_HANDLER_TEMPLATE;
+        let prompt = crate::templates::compose_prompt_from_state(&state, template)
+            .unwrap_or_else(|_| req_clone.text.clone());
+
+        // Get API key from secrets or env
+        let api_key = {
+            let rt = runtime.read().unwrap();
+            crate::secrets::get_secret(&rt.character, "ANTHROPIC_API_KEY")
+        }
+        .or_else(|| std::env::var("ANTHROPIC_API_KEY").ok())
+        .unwrap_or_default();
+
+        if api_key.is_empty() {
+            let _ = stream_handler
+                .send_error(ZoeyError::other("ANTHROPIC_API_KEY not configured"))
+                .await;
+            return;
+        }
+
+        let model = std::env::var("ANTHROPIC_MODEL").unwrap_or_else(|_| "claude-3-haiku-20240307".to_string());
+
+        let req_body = serde_json::json!({
+            "model": model,
+            "max_tokens": 2048,
+            "messages": [{"role": "user", "content": prompt}],
+            "stream": true
+        });
+
+        static ANTHROPIC_CLIENT: OnceLock<HttpClient> = OnceLock::new();
+        let client = ANTHROPIC_CLIENT
+            .get_or_init(|| {
+                reqwest::Client::builder()
+                    .pool_max_idle_per_host(50)
+                    .pool_idle_timeout(std::time::Duration::from_secs(300))
+                    .tcp_keepalive(std::time::Duration::from_secs(60))
+                    .timeout(std::time::Duration::from_secs(120))
+                    .build()
+                    .unwrap_or_else(|_| reqwest::Client::new())
+            })
+            .clone();
+        let stream_timeout = std::env::var("LLM_STREAM_TIMEOUT")
+            .ok()
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or(120);
+        let stream_start = Instant::now();
+        let prompt_tokens = TokenCounter::estimate_tokens(&prompt);
+        let resp = tokio::time::timeout(
+            Duration::from_secs(stream_timeout),
+            client
+                .post("https://api.anthropic.com/v1/messages")
+                .header("x-api-key", &api_key)
+                .header("anthropic-version", "2023-06-01")
+                .header("accept", "text/event-stream")
+                .header("content-type", "application/json")
+                .json(&req_body)
+                .send(),
+        )
+        .await;
+
+        match resp {
+            Err(_) => {
+                let _ = stream_handler
+                    .send_error(ZoeyError::other("Anthropic streaming request timed out"))
+                    .await;
+            }
+            Ok(Err(e)) => {
+                let _ = stream_handler
+                    .send_error(ZoeyError::other(format!(
+                        "Anthropic streaming request failed: {}",
+                        e
+                    )))
+                    .await;
+            }
+            Ok(Ok(mut r)) => {
+                if !r.status().is_success() {
+                    let error_text = r.text().await.unwrap_or_default();
+                    let _ = stream_handler
+                        .send_error(ZoeyError::other(format!(
+                            "Anthropic API error: {}",
+                            error_text
+                        )))
+                        .await;
+                    return;
+                }
+
+                let mut buffer = String::new();
+                let mut full_text = String::new();
+                let mut ttft_ms: Option<u64> = None;
+                while let Ok(chunk_result) = tokio::time::timeout(
+                    Duration::from_secs(stream_timeout),
+                    r.chunk(),
+                )
+                .await
+                {
+                    let chunk = match chunk_result {
+                        Ok(opt) => match opt {
+                            Some(c) => c,
+                            None => break,
+                        },
+                        Err(e) => {
+                            let _ = stream_handler
+                                .send_error(ZoeyError::other(format!(
+                                    "Anthropic streaming chunk failed: {}",
+                                    e
+                                )))
+                                .await;
+                            break;
+                        }
+                    };
+                    let s = String::from_utf8_lossy(&chunk);
+                    buffer.push_str(&s);
+                    let mut parts: Vec<&str> = buffer.split('\n').collect();
+                    let tail = parts.pop().unwrap_or("");
+                    for line in parts {
+                        let l = line.trim();
+                        if !l.starts_with("data:") {
+                            continue;
+                        }
+                        let payload = l.trim_start_matches("data:").trim();
+                        if payload.is_empty() {
+                            continue;
+                        }
+                        if let Ok(json) = serde_json::from_str::<JsonValue>(payload) {
+                            if let Some(t) = json.get("type").and_then(|v| v.as_str()) {
+                                match t {
+                                    "content_block_delta" => {
+                                        if let Some(delta) = json.get("delta") {
+                                            if let Some(text) = delta.get("text").and_then(|v| v.as_str()) {
+                                                // Record TTFT on first content
+                                                if ttft_ms.is_none() && !text.is_empty() {
+                                                    ttft_ms = Some(stream_start.elapsed().as_millis() as u64);
+                                                }
+                                                let _ = stream_handler
+                                                    .send_chunk(text.to_string(), false)
+                                                    .await;
+                                                full_text.push_str(text);
+                                            }
+                                        }
+                                    }
+                                    "message_stop" => {
+                                        let _ = stream_handler.send_chunk(String::new(), true).await;
+                                        let latency_ms = stream_start.elapsed().as_millis() as u64;
+                                        let completion_tokens = TokenCounter::estimate_tokens(&full_text);
+                                        // Store response
+                                        if let Some(adapter) = adapter.as_ref() {
+                                            let response = Memory {
+                                                id: Uuid::new_v4(),
+                                                entity_id: agent_id,
+                                                agent_id,
+                                                room_id: req_clone.room_id,
+                                                content: Content {
+                                                    text: full_text.clone(),
+                                                    source: Some(req_clone.source.clone()),
+                                                    ..Default::default()
+                                                },
+                                                embedding: None,
+                                                metadata: None,
+                                                created_at: chrono::Utc::now().timestamp(),
+                                                unique: Some(false),
+                                                similarity: None,
+                                            };
+                                            let _ = adapter.create_memory(&response, "messages").await;
+                                        }
+                                        // Track cost
+                                        if let Some(tracker) = get_global_cost_tracker() {
+                                            let context = LLMCallContext {
+                                                agent_id,
+                                                user_id: req_clone.entity_id.map(|u| u.to_string()),
+                                                conversation_id: Some(req_clone.room_id),
+                                                action_name: None,
+                                                evaluator_name: None,
+                                                temperature: Some(0.7),
+                                                cached_tokens: None,
+                                                ttft_ms,
+                                                prompt_hash: None,
+                                                prompt_preview: Some(req_clone.text.chars().take(100).collect()),
+                                            };
+                                            let _ = tracker.record_llm_call(
+                                                "anthropic",
+                                                &model,
+                                                prompt_tokens,
+                                                completion_tokens,
+                                                latency_ms,
+                                                agent_id,
+                                                context,
+                                            ).await;
+                                        }
+                                        {
+                                            let mut rt = runtime.write().unwrap();
+                                            let key = format!("ui:lastAddressed:{}", req_clone.room_id);
+                                            rt.set_setting(
+                                                &key,
+                                                serde_json::json!(chrono::Utc::now().timestamp()),
+                                                false,
+                                            );
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                    }
+                    buffer = tail.to_string();
+                }
+            }
+        }
+        return;
+    }
+
     // Fallback: process and chunk final output
     match process_chat_task(runtime.clone(), req_clone.clone()).await {
         Ok(resp) => {
