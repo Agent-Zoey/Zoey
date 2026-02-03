@@ -52,6 +52,7 @@ impl Phase0Preprocessor {
         let mut js: JoinSet<(String, serde_json::Value, i64)> = JoinSet::new();
         let text = message.content.text.clone();
 
+        // mp1: Language detection
         {
             let t = text.clone();
             js.spawn(async move {
@@ -64,6 +65,7 @@ impl Phase0Preprocessor {
                 )
             });
         }
+        // mp2: Classification
         {
             let t = text.clone();
             js.spawn(async move {
@@ -80,6 +82,7 @@ impl Phase0Preprocessor {
                 )
             });
         }
+        // mp3: Topics/Keywords
         {
             let t = text.clone();
             js.spawn(async move {
@@ -95,6 +98,7 @@ impl Phase0Preprocessor {
                 )
             });
         }
+        // mp4: Entities
         {
             let t = text.clone();
             js.spawn(async move {
@@ -107,6 +111,7 @@ impl Phase0Preprocessor {
                 )
             });
         }
+        // mp5 (analyze_all): Detectors
         {
             let t = text.clone();
             js.spawn(async move {
@@ -119,6 +124,7 @@ impl Phase0Preprocessor {
                 )
             });
         }
+        // mp5: Complexity
         {
             let rt = self.runtime.clone();
             let msg = message.clone();
@@ -132,15 +138,20 @@ impl Phase0Preprocessor {
                 )
             });
         }
+        // mp6: Embedding queue
         {
             let rt_arc = self.runtime.clone();
+            
             let enabled = {
                 let rt = rt_arc.read().unwrap();
                 rt.get_setting("ui:phase0_embeddings")
                     .and_then(|v| v.as_bool())
                     .unwrap_or(false)
             };
+            
+            
             let adapter_opt = rt_arc.read().unwrap().adapter.read().unwrap().clone();
+            
             let handler_opt = rt_arc
                 .read()
                 .unwrap()
@@ -149,6 +160,7 @@ impl Phase0Preprocessor {
                 .unwrap()
                 .get("TEXT_EMBEDDING")
                 .and_then(|v| v.first().map(|p| p.handler.clone()));
+            
             let prompt_text = {
                 let rt = rt_arc.read().unwrap();
                 rt.get_setting("ui:lastPrompt")
@@ -156,6 +168,7 @@ impl Phase0Preprocessor {
                     .unwrap_or_else(|| text.clone())
             };
             let msg_owned = message.clone();
+            
             js.spawn(async move {
                 let st = std::time::Instant::now();
                 let done = mp6_embedding_queue(rt_arc.clone(), &msg_owned, prompt_text).await;
@@ -166,6 +179,7 @@ impl Phase0Preprocessor {
                 )
             });
         }
+        // mp7: Available actions
         {
             let rt = self.runtime.clone();
             js.spawn(async move {
@@ -178,6 +192,7 @@ impl Phase0Preprocessor {
                 )
             });
         }
+        // mp8: Agent candidates
         {
             let rt = self.runtime.clone();
             js.spawn(async move {
@@ -191,6 +206,7 @@ impl Phase0Preprocessor {
             });
         }
 
+        
         let mut out = Phase0Output::new();
         let start = std::time::Instant::now();
         let mut profiles: Vec<(String, i64)> = Vec::new();
@@ -261,13 +277,12 @@ impl Phase0Preprocessor {
                     "phase0:detectors" => {
                         if let Some(obj) = val.as_object() {
                             if let Some(amb) = obj.get("ambiguity_score").and_then(|v| v.as_f64()) {
-                                let mut rt = self.runtime.write().unwrap();
+                                // Use existing `rt` - don't acquire nested write lock!
                                 rt.set_setting("ui:ambiguity", serde_json::json!(amb), false);
                             }
                             if let Some(hint) =
                                 obj.get("urgency_markers").and_then(|v| v.as_array())
                             {
-                                let mut rt = self.runtime.write().unwrap();
                                 rt.set_setting(
                                     "ui:urgency_markers",
                                     serde_json::json!(hint.len()),
@@ -277,7 +292,6 @@ impl Phase0Preprocessor {
                             if let Some(incomplete) =
                                 obj.get("incomplete").and_then(|v| v.as_bool())
                             {
-                                let mut rt = self.runtime.write().unwrap();
                                 rt.set_setting(
                                     "ui:incomplete",
                                     serde_json::json!(incomplete),

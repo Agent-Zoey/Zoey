@@ -117,7 +117,7 @@ pub fn mp4_entities_simple(text: &str) -> Vec<String> {
 }
 
 pub async fn mp5_complexity(
-    runtime: std::sync::Arc<std::sync::RwLock<crate::AgentRuntime>>,
+    _runtime: std::sync::Arc<std::sync::RwLock<crate::AgentRuntime>>,
     message: &Memory,
 ) -> Option<crate::planner::complexity::ComplexityAssessment> {
     let analyzer = crate::planner::complexity::ComplexityAnalyzer::new();
