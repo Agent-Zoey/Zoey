@@ -191,6 +191,8 @@ impl AgentApiServer {
             .route("/agent/mcp/training/status", get(super::handlers::training_job_status_handler))
             .route("/agent/mcp/training/jobs", get(super::handlers::training_jobs_handler))
             .route("/agent/mcp/training/events", get(training_events_sse))
+            // Skill documentation
+            .route("/docs/skills", get(super::handlers::skill_docs_handler))
             .with_state(state.clone());
 
         // Note: Middleware temporarily disabled due to complex type inference issues
