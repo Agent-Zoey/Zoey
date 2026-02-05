@@ -4502,7 +4502,7 @@ pub async fn training_jobs_handler() -> impl IntoResponse {
     let jobs = get_training_jobs().read().unwrap();
     let job_list: Vec<_> = jobs.values().cloned().collect();
     let total = job_list.len();
-
+    
     let response = serde_json::json!({
         "status": "success",
         "data": {
@@ -4512,14 +4512,4 @@ pub async fn training_jobs_handler() -> impl IntoResponse {
         }
     });
     (StatusCode::OK, Json(response))
-}
-
-/// Skill documentation handler - serves skill.md as docs
-pub async fn skill_docs_handler() -> impl IntoResponse {
-    const SKILL_DOCS: &str = include_str!("../../../../../docs/skill.md");
-    (
-        StatusCode::OK,
-        [("content-type", "text/markdown; charset=utf-8")],
-        SKILL_DOCS,
-    )
 }
