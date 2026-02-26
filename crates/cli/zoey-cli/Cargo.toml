@@ -1,0 +1,64 @@
+[package]
+name = "zoey-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Zoey CLI — privacy-first AI agent from the terminal"
+
+[[bin]]
+name = "zoey"
+path = "src/main.rs"
+
+[dependencies]
+# Core
+zoey-core = { path = "../../core/zoey-core" }
+
+# Plugins
+zoey-plugin-bootstrap = { path = "../../plugins/zoey-plugin-bootstrap" }
+zoey-plugin-observability = { path = "../../plugins/zoey-plugin-observability" }
+zoey-plugin-knowledge = { path = "../../plugins/zoey-plugin-knowledge" }
+zoey-plugin-lifeengine = { path = "../../plugins/zoey-plugin-lifeengine" }
+
+# Providers
+zoey-provider-openai = { path = "../../providers/zoey-provider-openai" }
+zoey-provider-local = { path = "../../providers/zoey-provider-local" }
+zoey-provider-anthropic = { path = "../../providers/zoey-provider-anthropic" }
+
+# Extensions
+zoey-ext-workflow = { path = "../../extensions/zoey-ext-workflow" }
+
+# Storage
+zoey-storage-vector = { path = "../../storage/zoey-storage-vector" }
+zoey-storage-sql = { path = "../../storage/zoey-storage-sql" }
+
+# CLI
+clap = { workspace = true, features = ["derive", "env"] }
+clap_complete = "4.5"
+rustyline = "14.0"
+colored = "2.1"
+indicatif = "0.17"
+
+# Async
+tokio = { workspace = true }
+async-trait = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# HTTP
+reqwest = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+
+# Utilities
+chrono = { workspace = true }
+uuid = { workspace = true }
+dotenvy = { workspace = true }
+dirs = "5.0"
