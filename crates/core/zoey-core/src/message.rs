@@ -39,6 +39,197 @@ impl MessageProcessor {
         }
     }
 
+    /// Try to generate response using chain-of-thought if complexity warrants it
+    ///
+    /// Returns Ok(Some(response)) if CoT was used successfully
+    /// Returns Ok(None) if CoT should not be used for this message
+    /// Returns Err if CoT was attempted but failed
+    async fn try_chain_of_thought_response(
+        &self,
+        message: &Memory,
+        state: &State,
+    ) -> Result<Option<String>> {
+        use crate::planner::{
+            ChainOfThoughtOrchestrator, ComplexityAnalyzer, ComplexityLevel, Planner,
+            PlannerConfig, TeacherSelector,
+        };
+        use std::sync::Arc;
+
+        // Check if chain-of-thought is enabled via settings
+        let cot_enabled = {
+            let rt = self.runtime.read().unwrap();
+            rt.get_setting("planner:chain_of_thought_enabled")
+                .and_then(|v| v.as_bool())
+                .unwrap_or_else(|| {
+                    std::env::var("CHAIN_OF_THOUGHT_ENABLED")
+                        .map(|v| v.eq_ignore_ascii_case("true"))
+                        .unwrap_or(false) // Disabled by default until stable
+                })
+        };
+
+        if !cot_enabled {
+            return Ok(None);
+        }
+
+        // Assess message complexity
+        let complexity_analyzer = ComplexityAnalyzer::new();
+        let complexity = complexity_analyzer.assess(message, state).await?;
+
+        // Get CoT threshold from settings (default: Moderate)
+        let threshold = {
+            let rt = self.runtime.read().unwrap();
+            let threshold_str = rt
+                .get_setting("planner:cot_threshold")
+                .and_then(|v| v.as_str().map(|s| s.to_string()));
+            drop(rt); // Release lock before processing
+            threshold_str
+                .map(|s| match s.to_lowercase().as_str() {
+                    "trivial" => ComplexityLevel::Trivial,
+                    "simple" => ComplexityLevel::Simple,
+                    "moderate" => ComplexityLevel::Moderate,
+                    "complex" => ComplexityLevel::Complex,
+                    "very_complex" | "verycomplex" => ComplexityLevel::VeryComplex,
+                    _ => ComplexityLevel::Moderate,
+                })
+                .unwrap_or(ComplexityLevel::Moderate)
+        };
+
+        // Check if complexity meets threshold
+        let should_use_cot = match (complexity.level, threshold) {
+            (ComplexityLevel::VeryComplex, _) => true,
+            (ComplexityLevel::Complex, t) if t != ComplexityLevel::VeryComplex => true,
+            (ComplexityLevel::Moderate, t)
+                if !matches!(t, ComplexityLevel::Complex | ComplexityLevel::VeryComplex) =>
+            {
+                true
+            }
+            (ComplexityLevel::Simple, ComplexityLevel::Simple | ComplexityLevel::Trivial) => true,
+            (ComplexityLevel::Trivial, ComplexityLevel::Trivial) => true,
+            _ => false,
+        };
+
+        if !should_use_cot {
+            debug!(
+                "Complexity {} below threshold {}, skipping CoT",
+                complexity.level, threshold
+            );
+            return Ok(None);
+        }
+
+        info!(
+            "Using chain-of-thought for {} complexity task (threshold: {})",
+            complexity.level, threshold
+        );
+
+        // Get available memory for teacher selection
+        let available_memory_gb = {
+            let rt = self.runtime.read().unwrap();
+            rt.get_setting("planner:available_memory_gb")
+                .and_then(|v| v.as_f64())
+                .map(|f| f as f32)
+                .unwrap_or(8.0)
+        };
+
+        // Create teacher selector and orchestrator
+        let teacher_selector =
+            Arc::new(TeacherSelector::with_default_teachers().with_memory_constraint(available_memory_gb));
+        let orchestrator = ChainOfThoughtOrchestrator::new(Arc::clone(&teacher_selector));
+
+        // Infer task type
+        let task_type = {
+            let text = message.content.text.to_lowercase();
+            if text.contains("code")
+                || text.contains("implement")
+                || text.contains("function")
+                || text.contains("debug")
+            {
+                crate::planner::TaskType::CodeGeneration
+            } else if text.contains("summarize") || text.contains("summary") {
+                crate::planner::TaskType::Summarization
+            } else if text.contains("analyze")
+                || text.contains("step by step")
+                || text.contains("reason")
+            {
+                crate::planner::TaskType::Reasoning
+            } else if text.contains('?') {
+                crate::planner::TaskType::QuestionAnswering
+            } else {
+                crate::planner::TaskType::Chat
+            }
+        };
+
+        // Create the chain
+        let chain = orchestrator.create_chain(&complexity, task_type);
+
+        info!(
+            "Created {} chain with {} steps for {} task",
+            complexity.level,
+            chain.len(),
+            task_type
+        );
+
+        // Build initial context from state (conversation summary, etc.)
+        let initial_context = state
+            .data
+            .get("conversationContext")
+            .and_then(|v| v.as_str())
+            .or_else(|| state.data.get("recentMessages").and_then(|v| v.as_str()))
+            .map(|s| s.to_string());
+
+        // Create a reference to self for the closure
+        let processor = self;
+
+        // Execute the chain using our LLM caller
+        let result = orchestrator
+            .execute_chain(
+                &chain,
+                &message.content.text,
+                initial_context.as_deref(),
+                |prompt, model_name, max_tokens, temperature| async move {
+                    processor
+                        .call_llm_with_model(&prompt, model_name, max_tokens, temperature)
+                        .await
+                },
+            )
+            .await?;
+
+        if result.success {
+            info!(
+                "Chain-of-thought completed: {} steps, {} tokens, {}ms",
+                result.step_results.len(),
+                result.total_tokens_used,
+                result.total_execution_time_ms
+            );
+
+            // Log step details for observability
+            for step_result in &result.step_results {
+                debug!(
+                    "  Step {}: {} ({}) - {} tokens, {}ms",
+                    step_result.step_index,
+                    step_result.step_type,
+                    step_result.model_used,
+                    step_result.tokens_used,
+                    step_result.execution_time_ms
+                );
+            }
+
+            Ok(Some(result.final_output))
+        } else {
+            // Chain failed
+            let error_msg = result
+                .step_results
+                .iter()
+                .find(|r| !r.success)
+                .and_then(|r| r.error.clone())
+                .unwrap_or_else(|| "Unknown chain failure".to_string());
+
+            Err(ZoeyError::Other(format!(
+                "Chain-of-thought failed: {}",
+                error_msg
+            )))
+        }
+    }
+
     /// Process an incoming message
     pub async fn process_message(&self, message: Memory, room: Room) -> Result<Vec<Memory>> {
         let span =
@@ -71,10 +262,13 @@ impl MessageProcessor {
         // 2. Determine if should respond (with delayed reassessment window)
         debug!("Determining if should respond");
         let should_respond = self.should_respond(&message, &room).await?;
+        debug!("should_respond returned: {}", should_respond);
         // Merge follow-up if pending within window, otherwise start window for incomplete
         let mut message = message; // shadow for potential text update
         {
+            debug!("Acquiring runtime write lock for delayed reassessment check");
             let mut rt = self.runtime.write().unwrap();
+            debug!("Acquired runtime write lock");
             let enabled = rt
                 .get_setting("AUTONOMOUS_DELAYED_REASSESSMENT")
                 .and_then(|v| v.as_bool())
@@ -124,18 +318,23 @@ impl MessageProcessor {
             info!("Decided not to respond to message");
             return Ok(vec![]);
         }
+        debug!("Passed should_respond check, proceeding to Phase 0");
 
         // Phase 0: Preprocess message with mini-pipelines
+        // TEMPORARILY DISABLED for debugging - Phase 0 seems to block
         {
             let enabled = {
                 let rt = self.runtime.read().unwrap();
                 rt.get_setting("ui:phase0_enabled")
                     .and_then(|v| v.as_bool())
-                    .unwrap_or(true)
+                    .unwrap_or(true) // Temporarily enabled for debugging
             };
+            debug!("Phase 0 enabled: {}", enabled);
             if enabled {
+                debug!("Starting Phase 0 preprocessor");
                 let pre = crate::preprocessor::Phase0Preprocessor::new(self.runtime.clone());
                 let phase0 = pre.execute(&message).await;
+                debug!("Phase 0 completed");
                 if let Ok(res) = phase0 {
                     if let Some(tone) = res.tone.as_ref() {
                         let mut rt = self.runtime.write().unwrap();
@@ -494,6 +693,26 @@ impl MessageProcessor {
 
     /// Generate response text using LLM (supports OpenAI, Anthropic, Local LLM)
     async fn generate_response(&self, message: &Memory, state: &State) -> Result<String> {
+        // Check if chain-of-thought should be used based on message complexity
+        let cot_result = self.try_chain_of_thought_response(message, state).await;
+        match cot_result {
+            Ok(Some(response)) => {
+                info!(
+                    "Chain-of-thought response generated ({} chars)",
+                    response.len()
+                );
+                return Ok(response);
+            }
+            Ok(None) => {
+                // CoT not used, continue with normal flow
+                debug!("Chain-of-thought not applicable, using standard response");
+            }
+            Err(e) => {
+                // CoT failed, fall back to normal flow
+                warn!("Chain-of-thought failed: {}, falling back to standard", e);
+            }
+        }
+
         // Compose prompt from state using template
         let template_owned = {
             let rt = self.runtime.read().unwrap();
@@ -1063,6 +1282,158 @@ impl MessageProcessor {
                 self.call_ollama_direct(prompt).await
             }
         }
+    }
+
+    /// Call LLM with a specific model name and parameters (for chain-of-thought execution)
+    ///
+    /// Returns (response_text, tokens_used)
+    pub async fn call_llm_with_model(
+        &self,
+        prompt: &str,
+        model_name: Option<String>,
+        max_tokens: usize,
+        temperature: f32,
+    ) -> Result<(String, usize)> {
+        use crate::types::model::{GenerateTextParams, ModelHandlerParams};
+
+        // Get model handlers
+        let model_handlers = {
+            let rt = self.runtime.read().unwrap();
+            let models = rt.models.read().unwrap();
+            models.get("TEXT_LARGE").cloned()
+        };
+
+        if let Some(handlers) = model_handlers {
+            // If model_name specified, try to find a matching provider
+            let provider = if let Some(ref model) = model_name {
+                let model_lc = model.to_lowercase();
+                
+                // Check if it's a local model name (ollama format like "phi3:mini")
+                let is_local_model = model_lc.contains(':') || 
+                    model_lc.starts_with("llama") ||
+                    model_lc.starts_with("phi") ||
+                    model_lc.starts_with("qwen") ||
+                    model_lc.starts_with("mistral") ||
+                    model_lc.starts_with("codellama");
+
+                if is_local_model {
+                    // Find local provider
+                    handlers.iter().find(|h| {
+                        let h_lc = h.name.to_lowercase();
+                        h_lc.contains("local") || h_lc.contains("llm") || h_lc.contains("ollama")
+                    }).cloned()
+                } else {
+                    // Try to match by model name
+                    handlers.iter().find(|h| {
+                        let h_lc = h.name.to_lowercase();
+                        h_lc.contains(&model_lc) || model_lc.contains(&h_lc)
+                    }).cloned()
+                }
+            } else {
+                // No model specified, use highest priority
+                handlers.first().cloned()
+            };
+
+            if let Some(provider) = provider {
+                let params = GenerateTextParams {
+                    prompt: prompt.to_string(),
+                    max_tokens: Some(max_tokens),
+                    temperature: Some(temperature),
+                    top_p: None,
+                    stop: None,
+                    model: model_name.clone(),
+                    frequency_penalty: None,
+                    presence_penalty: None,
+                };
+
+                let model_params = ModelHandlerParams {
+                    runtime: Arc::new(()),
+                    params,
+                };
+
+                debug!(
+                    "CoT step calling model handler: {} with model {:?} (temp: {}, max_tokens: {})",
+                    provider.name, model_name, temperature, max_tokens
+                );
+
+                match (provider.handler)(model_params).await {
+                    Ok(text) => {
+                        // Estimate tokens used (rough: ~4 chars per token)
+                        let tokens_estimate = (prompt.len() + text.len()) / 4;
+                        return Ok((text, tokens_estimate));
+                    }
+                    Err(e) => {
+                        warn!("Model handler {} failed for CoT step: {}", provider.name, e);
+                    }
+                }
+            }
+        }
+
+        // Fallback to direct Ollama call for local models
+        if let Some(ref model) = model_name {
+            let result = self.call_ollama_direct_with_model(prompt, model, max_tokens, temperature).await?;
+            let tokens_estimate = (prompt.len() + result.len()) / 4;
+            return Ok((result, tokens_estimate));
+        }
+
+        Err(crate::ZoeyError::Other(
+            "No suitable model handler found for chain-of-thought step".to_string(),
+        ))
+    }
+
+    /// Direct Ollama call with specific model and parameters
+    async fn call_ollama_direct_with_model(
+        &self,
+        prompt: &str,
+        model: &str,
+        max_tokens: usize,
+        temperature: f32,
+    ) -> Result<String> {
+        let client = reqwest::Client::new();
+        let endpoint = std::env::var("OLLAMA_BASE_URL")
+            .or_else(|_| std::env::var("OLLAMA_ENDPOINT"))
+            .unwrap_or_else(|_| "http://localhost:11434".to_string());
+
+        let url = format!("{}/api/generate", endpoint);
+
+        debug!(
+            "Calling Ollama directly: model={}, max_tokens={}, temp={}",
+            model, max_tokens, temperature
+        );
+
+        let response = client
+            .post(&url)
+            .json(&serde_json::json!({
+                "model": model,
+                "prompt": prompt,
+                "stream": false,
+                "options": {
+                    "num_predict": max_tokens,
+                    "temperature": temperature
+                }
+            }))
+            .send()
+            .await
+            .map_err(|e| crate::ZoeyError::Other(format!("Ollama request failed: {}", e)))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let text = response.text().await.unwrap_or_default();
+            return Err(crate::ZoeyError::Other(format!(
+                "Ollama returned error {}: {}",
+                status, text
+            )));
+        }
+
+        let json: serde_json::Value = response
+            .json()
+            .await
+            .map_err(|e| crate::ZoeyError::Other(format!("Failed to parse Ollama response: {}", e)))?;
+
+        json["response"]
+            .as_str()
+            .map(|s| s.to_string())
+            .ok_or_else(|| crate::ZoeyError::Other("No response field in Ollama output".to_string()))
     }
 
     /// Generate response as a stream of text chunks
