@@ -10,6 +10,7 @@ members = [
     "crates/providers/zoey-provider-anthropic",
     "crates/providers/zoey-provider-openai",
     "crates/providers/zoey-provider-redpill",
+    "crates/providers/zoey-provider-elizaos",
     "crates/providers/zoey-provider-local",
     "crates/providers/zoey-provider-voice",
     "crates/providers/zoey-provider-router",
@@ -32,6 +33,7 @@ members = [
     "crates/plugins/zoey-plugin-scheduler",
     "crates/plugins/zoey-plugin-x402-video",
     "crates/plugins/zoey-plugin-lifeengine",
+    "crates/plugins/zoey-plugin-kibana",
     
     # Extensions
     "crates/extensions/zoey-ext-workflow",
@@ -41,6 +43,7 @@ members = [
     "crates/adaptors/zoey-adaptor-discord",
     "crates/adaptors/zoey-adaptor-telegram",
     "crates/adaptors/zoey-adaptor-terminal",
+    "crates/adaptors/zoey-adaptor-kibana",
     
     # CLI
     "crates/cli/zoey-cli",
