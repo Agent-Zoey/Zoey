@@ -42,6 +42,9 @@ members = [
     "crates/adaptors/zoey-adaptor-telegram",
     "crates/adaptors/zoey-adaptor-terminal",
     
+    # CLI
+    "crates/cli/zoey-cli",
+    
     # Tools
     "tools/generate-config",
     "run-agent-ui",
